@@ -157,6 +157,7 @@ async function handler(req,env){
  if(method==='GET'&&(p==='/'||p==='/admin'||p==='/admin/'||p.startsWith('/view/')))return html(ASSETS.html);
  if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'public,max-age=300','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'public,max-age=300','x-content-type-options':'nosniff'}});
+ if(method==='GET'&&p==='/assets/legacy-bridge.js')return new Response(ASSETS.bridge,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.0'});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
@@ -186,7 +187,7 @@ async function handler(req,env){
   if(!await sessionValid(req,env))return fail('请先登录管理后台',401);
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(req))return fail('请求来源不合法',403);
  }
- if(method==='GET'&&p==='/admin/legacy-editor')return html(ASSETS.legacy,true);
+ if(method==='GET'&&p==='/admin/legacy-editor')return html(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'),true);
  if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true});
  if(method==='POST'&&p==='/api/admin/logout')return out({ok:true},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
  if(method==='GET'&&p==='/api/admin/items'){
