@@ -200,11 +200,29 @@ async function handler(req,env){
   await env.DB.prepare('DELETE FROM login_attempts WHERE ip=?').bind(ipHash).run();
   return out({ok:true},200, {'set-cookie':cookie(await newSession(env))});
  }
- if(p.startsWith('/api/admin/')||p==='/admin/legacy-editor'){
+ if(p.startsWith('/api/admin/')||p==='/admin/legacy-editor'||p==='/admin/docx-editor'){
   if(!await sessionValid(req,env))return fail('请先登录管理后台',401);
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(req))return fail('请求来源不合法',403);
  }
  if(method==='GET'&&p==='/admin/legacy-editor')return html(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'),true);
+ if(method==='GET'&&p==='/admin/docx-editor')return html(ASSETS.docxAdmin,true);
+ if(p.startsWith('/api/admin/docx/')){
+  const remotePath=p.replace('/api/admin/docx/','/api/');
+  if(!/^\/api\/(?:templates(?:\/[a-f0-9-]{16,60})?|templates\/[a-f0-9-]{16,60}\/(?:docx|version)|login|logout|session|password|order)$/.test(remotePath))
+   return fail('DOCX 管理接口不存在',404);
+  if(!['GET','POST','PUT','PATCH','DELETE'].includes(method))return fail('不支持的方法',405);
+  const target='https://ms-khmb.mosen6266-ms007.workers.dev'+remotePath+url.search;
+  const headers=new Headers(req.headers);
+  for(const key of ['cookie','host','content-length','cf-connecting-ip','cf-ipcountry','cf-ray'])headers.delete(key);
+  const body=['GET','HEAD'].includes(method)?undefined:await req.arrayBuffer();
+  const remote=await env.DOCX_SERVICE.fetch(new Request(target,{method,headers,body}));
+  const passthrough=new Headers({'cache-control':'no-store','x-content-type-options':'nosniff'});
+  for(const key of ['content-type','content-disposition','x-template-version','etag','location']){
+   const value=remote.headers.get(key);if(value)passthrough.set(key,value);
+  }
+  return new Response(remote.body,{status:remote.status,headers:passthrough});
+ }
+
  if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true});
  if(method==='POST'&&p==='/api/admin/logout')return out({ok:true},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
  if(method==='GET'&&p==='/api/admin/items'){
