@@ -1,0 +1,354 @@
+/* MSWQ front end: public read-only site + authenticated content dashboard */
+(function(){
+'use strict';
+const root=document.getElementById('app');
+const $=selector=>document.querySelector(selector);
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const urlOk=x=>{try{return ['http:','https:'].includes(new URL(x,location.origin).protocol)}catch{return false}};
+const asset=id=>id?'/api/asset/'+encodeURIComponent(id):'';
+const typeNames={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具'};
+const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
+const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false};
+let toastTimer;
+function toast(t){const n=$('#toast');n.textContent=t;n.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.classList.remove('show'),2600)}
+async function api(path,opts={}){
+ const response=await fetch(path,{credentials:'same-origin',cache:'no-store',...opts});
+ let data;try{data=await response.json()}catch{throw Error('服务器响应不是 JSON ('+response.status+')')}
+ if(!response.ok||data.ok===false)throw Error(data.error||'请求失败 '+response.status);
+ return data;
+}
+const jsonBody=data=>({headers:{'content-type':'application/json'},body:JSON.stringify(data)});
+const fmt=x=>x?new Date(x).toLocaleDateString('zh-CN'):'';
+const slug=x=>(x||'').trim()||'new-page';
+function typeIcon(k){return {personal:'☷',group:'☰',document:'▤',page:'▦',link:'↗'}[k]||'▤'}
+function row(title,description,contents){return '<div class="admin-panel"><div class="panel-head"><div><h2>'+esc(title)+'</h2>'+(description?'<div class="muted small">'+esc(description)+'</div>':'')+'</div></div>'+contents+'</div>'}
+function controls(buttons){return '<div class="flex end">'+buttons+'</div>'}
+function field(name,value,prop,placeholder='',kind='input'){
+ const v=esc(value||'');
+ return '<div class="field"><label>'+esc(name)+'</label>'+(kind==='textarea'?'<textarea data-field="'+prop+'" placeholder="'+esc(placeholder)+'">'+v+'</textarea>':'<input data-field="'+prop+'" value="'+v+'" placeholder="'+esc(placeholder)+'">')+'</div>';
+}
+function publicHeader(){return '<header class="topbar"><div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
+function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
+async function showHome(){
+ document.title='MSWQ · 内容与工具中心';S.preview=false;
+ root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
+ try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;homeRender();}
+ catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
+}
+function homeRender(){
+ const c=S.settings||{},types=['all','personal','group','document','page','link'];
+ const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&[x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ').toLowerCase().includes(S.search.toLowerCase()));
+ const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'</div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind])+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>查看内容 →</span></div></div></a>').join('');
+ root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
+}
+function anchorButton(label,url){
+ return urlOk(url)?'<a class="action-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label||'打开链接')+' ↗</a>':'';
+}
+function memberHtml(b,item){
+ const members=item.content?.members||[];
+ const m=members.find(v=>String(v.id)===String(b.speakerId||b.memberId||b.actorId))||members.find(v=>v.name===b.speaker);
+ if(!m)return b.speaker?'<span class="member">'+esc(b.speaker)+'</span>':'';
+ const name=m.name||m.no||'成员';
+ return '<span class="member"><span class="avatar">'+esc(name.charAt(0))+'</span><strong>'+esc((m.label?m.label+' · ':'')+name)+'</strong></span>';
+}
+function blockRender(b,index,item){
+ const type=b.type||'text',title=b.title||blockNames[type]||'内容',id=esc(b.id||'b'+index);
+ if(type==='section')return '<h2 id="step-'+id+'" class="section-banner">'+esc(b.title||b.text||'新分段')+'</h2>';
+ const hdr='<div class="block-head"><span class="block-title">'+memberHtml(b,item)+' '+esc(title)+'</span><span class="block-type">'+esc(blockNames[type]||type)+' · '+(index+1)+'</span></div>';
+ let body='';
+ if(type==='bilingual'||type==='speech'){
+  body='<div class="langs"><div class="lang"><div class="lang-label">中文</div><pre>'+esc(b.zh||'')+'</pre></div><div class="lang en"><div class="lang-label">English</div><pre>'+esc(b.en||'')+'</pre></div></div><div class="copy-actions"><button class="btn sm" data-action="copy-text" data-id="'+id+'" data-lang="zh">复制中文</button><button class="btn sm primary" data-action="copy-text" data-id="'+id+'" data-lang="en">复制英文</button></div>';
+ }else if(type==='wait'){
+  body='<div class="block-text">'+esc(b.text||'等待指定时间后继续')+'</div><div class="countdown" id="timer-'+id+'">'+Math.max(1,Number(b.seconds)||60)+' 秒</div><button class="btn sm" data-action="countdown" data-id="'+id+'" data-seconds="'+Math.max(1,Number(b.seconds)||60)+'">开始倒计时</button>';
+ }else if(type==='button'||type==='link'){
+  const links=Array.isArray(b.links)&&b.links.length?b.links:[{url:b.url,label:b.text||title}];
+  body='<div class="block-text">'+esc(b.text||'')+'</div>'+links.map(l=>anchorButton(l.label||l.zh||l.en||'打开链接',l.url)).join('');
+ }else if(type==='image'){
+  body=b.assetId?'<img style="width:auto;max-width:100%;max-height:500px;border-radius:10px" loading="lazy" src="'+asset(b.assetId)+'" alt="'+esc(title)+'">':'<div class="muted">未设置图片</div>';
+  if(b.text)body+='<p class="block-text">'+esc(b.text)+'</p>';
+ }else if(type==='file'||type==='attachment'){
+  const files=(b.files||[]).length?b.files:(b.assetId?[{id:b.assetId,name:b.title||'下载文件'}]:[]);
+  body=files.map(f=>'<a class="file-chip" href="'+asset(f.id)+'" download>▣ '+esc(f.name||'下载附件')+' ↓</a>').join('')||'<span class="muted">暂无附件</span>';
+  if(b.text)body+='<div class="block-text">'+esc(b.text)+'</div>';
+ }else body='<div class="block-text">'+esc(b.text||b.content||'')+'</div>';
+ return '<article class="block '+(type==='hint'||type==='note'?'hint':type==='wait'?'wait':'')+'" id="step-'+id+'">'+hdr+body+'</article>';
+}
+async function showReader(slugText,localItem=null){
+ root.innerHTML='<div class="loading center" style="padding:100px">正在打开内容…</div>';
+ try{
+ const item=localItem||(await api('/api/public/item/'+encodeURIComponent(slugText))).item;S.viewer=item;S.preview=!!localItem;
+ document.title=item.title+' · MSWQ';
+ const content=item.content||{},blocks=content.blocks||[];
+ const nav=blocks.map((b,i)=>'<button class="navlink '+(b.type==='hint'?'hint':'')+'" data-action="jump" data-id="'+esc(b.id||'b'+i)+'">'+(i+1)+'. '+esc(b.title||b.text||blockNames[b.type]||'内容')+'</button>').join('');
+ let body='';
+ if(item.kind==='document'){
+  const docUrl=content.docUrl||((S.settings?.docx_url||'')+(content.templateId?'?template='+encodeURIComponent(content.templateId):''));
+  body='<div class="readonly-notice">此文档工作台由原有文档服务提供，MSWQ 不会在前台暴露本站的后台入口。</div>'+(urlOk(docUrl)?'<iframe class="doc-frame" title="文档在线工作台" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe>':'<div class="empty">尚未配置文档工具链接</div>');
+ }else if(item.kind==='link'){
+  body='<div class="block"><h2>'+esc(item.title)+'</h2><p>'+esc(item.description||'外部链接')+'</p>'+anchorButton('打开工具',content.url)+'</div>';
+ }else{
+  body=blocks.map((b,i)=>blockRender(b,i,item)).join('')||'<div class="empty">尚无公开内容</div>';
+ }
+ root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" class="btn sm">← 返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main><aside class="reader-aside"><h3>内容导航</h3>'+nav+'</aside></div></div>';
+ }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" href="/">返回首页</a></p></div>'}
+}
+async function openAdmin(){
+ root.innerHTML='<div class="loading center" style="padding:80px">正在验证后台权限…</div>';
+ try{
+  await api('/api/admin/me');S.admin=true;await loadAdmin();adminRender();
+ }catch{S.admin=false;loginRender();}
+}
+function loginRender(error=''){
+ root.innerHTML='<div class="login-screen"><div class="login-box"><div class="brand" style="margin-bottom:20px">MS<em>WQ</em> · ADMIN</div><h1>管理后台</h1><p>仅授权管理员可创建、编辑与发布内容。公开前台没有编辑权限。</p><form id="loginForm"><div class="field"><label>管理员密码</label><input type="password" id="adminPass" autocomplete="current-password" required placeholder="请输入后台密码"></div><button class="btn primary" type="submit">安全登录</button></form>'+(error?'<div class="login-error">'+esc(error)+'</div>':'')+'<p style="margin-top:20px" class="center"><a href="/">返回公开首页</a></p></div></div>';
+}
+async function loadAdmin(){
+ const [data,settings]=await Promise.all([api('/api/admin/items'),api('/api/admin/settings')]);
+ S.items=data.items;S.settings=settings.settings;
+}
+function sideNav(){
+ const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器']];
+ return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&x[0]==='library'?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>管理员已登录 · 数据云端保存</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a><button class="btn sm" data-action="logout">退出登录</button></div></div></aside>';
+}
+function adminRender(){
+ const heading={dashboard:'后台总览',library:'内容管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器'}[S.tab]||'管理后台';
+ const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，仍可继续编辑并导出备份'}[S.tab];
+ const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="library">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
+ root.innerHTML='<div class="admin-layout">'+sideNav()+'<main class="admin-main"><header class="admin-head"><div><h1>'+heading+'</h1><p>'+summary+'</p></div><div class="flex">'+action+'</div></header><div class="admin-content" id="adminPanel">'+adminPanel()+'</div></main></div>';
+}
+function adminPanel(){
+ if(S.tab==='dashboard'){
+  const published=S.items.filter(x=>x.status==='published').length;
+  const draft=S.items.length-published;
+  return '<div class="stats"><div class="stat"><span>全部内容</span><strong>'+S.items.length+'</strong></div><div class="stat"><span>已发布</span><strong>'+published+'</strong></div><div class="stat"><span>草稿</span><strong>'+draft+'</strong></div><div class="stat"><span>内容类型</span><strong>5</strong></div></div>'+row('快捷管理','创建内容后可独立生成公开链接','<div class="flex" style="flex-wrap:wrap"><button class="btn primary" data-action="new-item">＋ 新建流程 / 页面</button><button class="btn" data-action="tab" data-id="import">导入旧编辑器备份</button><button class="btn" data-action="tab" data-id="assets">上传图片或文件</button><a class="btn" href="/" target="_blank">查看公开首页</a></div>')+row('使用顺序','', '<div class="stack muted">① 在内容管理中创建个人流程、群剧本或页面 → ② 添加步骤、按钮、附件 → ③ 保存草稿并预览 → ④ 发布并复制公开链接。<br>DOCX 模块可以创建文档入口，暂时沿用原有 MS_KHMB 服务，不会修改其数据。</div>');
+ }
+ if(S.tab==='library'){
+  return row('内容列表','修改排序数字可调整公开首页的显示顺序','<div class="flex" style="margin-bottom:14px"><input id="adminSearch" class="input" placeholder="查找内容名称、分类、标签…" value="'+esc(S.search)+'"></div><div style="overflow:auto"><table class="admin-table"><thead><tr><th>标题 / 路径</th><th>类型</th><th>状态</th><th>排序</th><th>最后更新</th><th style="text-align:right">操作</th></tr></thead><tbody>'+S.items.filter(x=>(x.title+' '+x.slug+' '+x.category).toLowerCase().includes(S.search.toLowerCase())).map(x=>'<tr><td><strong>'+esc(x.title)+'</strong><div class="tiny muted truncate">/view/'+esc(x.slug)+'</div></td><td>'+esc(typeNames[x.kind])+'</td><td><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></td><td>'+x.sort_order+'</td><td class="small muted">'+fmt(x.updated_at)+'</td><td><div class="actions"><button class="btn sm" data-action="edit-item" data-id="'+x.id+'">编辑</button><button class="btn sm" data-action="copy-url" data-id="'+x.id+'">链接</button><button class="btn sm" data-action="quick-status" data-id="'+x.id+'">'+(x.status==='published'?'下架':'发布')+'</button></div></td></tr>').join('')+'</tbody></table></div>') ;
+ }
+ if(S.tab==='editor')return editorHtml();
+ if(S.tab==='assets')return assetsHtml();
+ if(S.tab==='settings')return settingsHtml();
+ if(S.tab==='import')return importHtml();
+ if(S.tab==='legacy')return row('原版个人流程 / 群剧本编辑器','仅管理员可以打开，编辑后的原版备份可在 MSWQ 导入发布','<p>保留原工具的双语话术、提示导航、成员管理、查找替换、查看版导出和原有本地编辑体验。</p><p class="warning">原版工具使用此浏览器的本地存储；在里面编辑不会自动同步到云端。需要通过「导出编辑备份」→「导入与备份」迁移。</p><a class="btn primary" href="/admin/legacy-editor" target="_blank" rel="noopener">打开完整原版编辑器 ↗</a>');
+ return '';
+}
+function blankBlock(type){
+ return {id:crypto.randomUUID(),type,title:blockNames[type]||'新步骤',text:'',zh:'',en:'',seconds:60,speakerId:'',url:'',links:[],assetId:'',files:[]};
+}
+function newItem(){
+ S.edit={id:null,version:0,kind:'personal',status:'draft',title:'新建个人流程',slug:'',description:'',category:'',tags:[],sort_order:1000,thumbnail:'',content:{blocks:[],members:[],keywords:[]}};
+ S.tab='editor';adminRender();
+}
+function editorHtml(){
+ const x=S.edit;if(!x)return '<div class="empty">请先从列表中选择需要编辑的内容</div>';
+ const c=x.content||(x.content={blocks:[],members:[]});
+ const select='<select data-field="kind">'+Object.keys(typeNames).map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+t+'">'+typeNames[t]+'</option>').join('')+'</select>';
+ let main='<div class="admin-panel" style="margin-top:0"><div class="panel-head"><h2>基本信息</h2><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></div><div class="two">'+field('标题',x.title,'title','例如：个人沟通流程')+'<div class="field"><label>内容类型</label>'+select+'</div></div>'+field('公开路径（slug）',x.slug,'slug','不填写时自动生成')+field('简介',x.description,'description','一句话介绍此内容','textarea')+'<div class="three">'+field('分类',x.category,'category','例如：客服')+field('标签（逗号分隔）',(x.tags||[]).join(', '),'tags','标签1, 标签2')+field('首页排序数字',x.sort_order,'sort_order','数字越小越靠前')+'</div>'+field('封面图片（可填写素材资源 URL）',x.thumbnail,'thumbnail','/api/asset/...')+'</div>';
+ if(x.kind==='document'){
+  main+=row('文档模板入口','可以填写完整旧工具链接，或在这里配置模板 ID',field('文档工作台 URL',c.docUrl||S.settings?.docx_url||'','docUrl','https://...')+field('指定模板 ID（可选）',c.templateId||'','templateId','原工具 template 参数'));
+ }else if(x.kind==='link'){
+  main+=row('外部工具跳转','只支持 http/https 链接',field('目标网址',c.url||'','url','https://example.com'));
+ }else{
+  if(x.kind==='group')main+=row('剧本成员','用英文逗号或换行分隔；保持你原始导入的成员名称',field('成员名单（每行一个）',(c.members||[]).map(m=>m.name).join('\n'),'memberNames','成员1\n成员2','textarea'));
+  main+=row('流程步骤','可以自由插入、修改、删除或调整顺序，编辑不会立即公开',
+   '<div class="flex space"><strong>共 '+(c.blocks||[]).length+' 个步骤</strong><span class="tiny muted">每个步骤可以包含文本、双语、链接或附件</span></div>'+(c.blocks||[]).map((b,i)=>blockEditor(b,i,c.members||[])).join('')+
+   '<div class="editor-add">'+Object.entries(blockNames).map(x=>'<button class="btn sm" data-action="add-block" data-id="'+x[0]+'">＋ '+x[1]+'</button>').join('')+'</div>');
+ }
+ main+='<div class="admin-panel"><div class="flex" style="flex-wrap:wrap"><button class="btn primary" data-action="save-item">保存草稿 / 修改</button><button class="btn green" data-action="publish-item">'+(x.status==='published'?'保存并继续发布':'保存并发布')+'</button><button class="btn" data-action="preview-item">预览</button>'+(x.id?'<button class="btn" data-action="revisions">历史版本</button><button class="btn danger" data-action="delete-item">删除内容</button>':'')+'</div></div>';
+ const aside='<aside class="editor-side"><strong>内容设置</strong><div class="stack small muted" style="margin-top:15px"><div>状态：'+(x.status==='published'?'已公开':'未公开草稿')+'</div><div>步骤数：'+(c.blocks||[]).length+'</div><div>版本：'+x.version+'</div><div>公开地址：</div><div class="wrap">/view/'+esc(x.slug||'保存后生成')+'</div></div><div class="stack" style="margin-top:18px">'+(x.id?'<button class="btn sm" data-action="copy-current">复制访问链接</button>':'')+'<button class="btn sm" data-action="tab" data-id="assets">素材库</button></div></aside>';
+ return '<div class="editor-grid"><div>'+main+'</div>'+aside+'</div>';
+}
+function blockEditor(b,i,members){
+ const attr=(key,placeholder='',type='text')=>type==='textarea'?'<textarea data-block="'+i+'" data-bfield="'+key+'" placeholder="'+esc(placeholder)+'">'+esc(b[key]||'')+'</textarea>':'<input type="'+type+'" data-block="'+i+'" data-bfield="'+key+'" placeholder="'+esc(placeholder)+'" value="'+esc(b[key]??'')+'">';
+ let fields='<div class="field"><label>步骤标题</label>'+attr('title','步骤名称')+'</div>';
+ if(b.type==='bilingual'){
+  fields+='<div class="cols"><div class="field"><label>中文话术</label>'+attr('zh','中文内容','textarea')+'</div><div class="field"><label>English</label>'+attr('en','English text','textarea')+'</div></div>';
+ } else if(b.type==='wait'){
+  fields+='<div class="cols"><div class="field"><label>等待秒数</label>'+attr('seconds','60','number')+'</div><div class="field"><label>备注</label>'+attr('text','操作说明')+'</div></div>';
+ }else if(b.type==='button'){
+  fields+='<div class="field"><label>按钮名称（使用步骤标题）</label></div><div class="field"><label>目标地址（https://）</label>'+attr('url','https://example.com')+'</div>'+fieldMiniText(b,i);
+ }else if(b.type==='image'||b.type==='file'){
+  fields+='<div class="field"><label>已选素材</label><input readonly value="'+esc(b.assetId||'未选择')+'"></div><button class="btn sm" data-action="pick-asset" data-id="'+i+'">从素材库选择图片 / 文件</button> '+(b.assetId?'<button class="btn sm" data-action="clear-asset" data-id="'+i+'">清除</button>':'')+fieldMiniText(b,i);
+ }else fields+=fieldMiniText(b,i);
+ if(members.length && ['bilingual','text'].includes(b.type))fields+='<div class="field"><label>说话成员</label><select data-block="'+i+'" data-bfield="speakerId"><option value="">无指定成员</option>'+members.map(m=>'<option value="'+esc(m.id)+'" '+(b.speakerId===m.id?'selected':'')+'>'+esc(m.name)+'</option>').join('')+'</select></div>';
+ return '<div class="editor-row"><div class="body"><div class="kind">'+(i+1)+' · '+esc(blockNames[b.type]||b.type)+'</div>'+fields+'</div><div class="controls"><button class="icon-btn" data-action="move-block" data-dir="-1" data-id="'+i+'" title="上移">↑</button><button class="icon-btn" data-action="move-block" data-dir="1" data-id="'+i+'" title="下移">↓</button><button class="icon-btn" data-action="remove-block" data-id="'+i+'" title="删除">×</button></div></div>';
+}
+function fieldMiniText(b,i){return '<div class="field" style="margin-top:9px"><label>内容 / 说明</label><textarea data-block="'+i+'" data-bfield="text">'+esc(b.text||'')+'</textarea></div>'}
+function assetsHtml(){
+ return row('素材库','上传后点击复制链接；正文图片和附件在步骤编辑中可直接选择','<div class="field"><label>添加图片 / 文件（12MB以内）</label><input type="file" id="assetUpload" accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
+}
+function assetCard(a,picker=false){
+ return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
+}
+function settingsHtml(){
+ const s=S.settings||{};
+ return row('首页文案与展示','只影响本站的公开首页，不会覆盖任何旧系统',
+  field('网站名称',s.brand,'brand')+field('首页大标题',s.headline,'headline')+field('首页说明',s.description,'description','','textarea')+field('公告（可留空）',s.announcement,'announcement','','textarea')+field('页脚版权文字',s.footer,'footer')+field('原 DOCX 工具默认网址',s.docx_url,'docx_url')+'<div class="warning">文档工具暂时通过独立服务加载，旧服务的内部权限并不受本站控制。真正移除旧工具的管理员入口需要独立迁移原有 DOCX 功能。</div><button class="btn green" data-action="save-settings">保存网站设置</button>');
+}
+function importHtml(){
+ return row('导入旧版流程','从上传的原始编辑器导出「编辑备份 JSON」，再上传到这里',
+ '<div class="notice">支持「群剧本」和「个人流程」两种 JSON。导入后默认是草稿，不会直接对外公开。包含的附件会尽可能导入到本站文件库。</div><div class="field" style="margin-top:15px"><label>选择 .json 备份文件</label><input type="file" id="importFile" accept=".json,application/json"></div><button class="btn primary" data-action="import-json">导入到草稿库</button><hr style="border:0;border-top:1px solid #444;margin:25px 0"><h3>平台数据备份</h3><p class="small muted">导出内容、设置和页面结构为 JSON。媒体文件需要另外保留，导出的 JSON 不含媒体二进制内容。</p><button class="btn" data-action="export-all">导出本站完整 JSON</button><p style="margin-top:20px" class="small muted">目前支持的直接导入格式为原版流程备份；本站 JSON 主要用于恢复依据，不提供一键整体恢复。</p>');
+}
+async function refreshPanel(){if(!S.admin)return;await loadAdmin();adminRender()}
+async function loadAssets(){const x=await api('/api/admin/assets');S.assets=x.assets}
+async function perform(action,id,el){
+ switch(action){
+ case 'filter':S.filter=id;homeRender();break;
+ case 'jump':document.getElementById('step-'+id)?.scrollIntoView({behavior:'smooth'});break;
+ case 'copy-text':{
+  const block=(S.viewer?.content?.blocks||[]).find(b=>b.id===id);
+  await navigator.clipboard.writeText(String(block?.[el.dataset.lang]||''));toast('已复制');break;
+ }
+ case 'countdown':{
+  const display=$('#timer-'+id),btn=el;let sec=Number(btn.dataset.seconds)||60;
+  if(btn._interval){clearInterval(btn._interval);btn._interval=null;btn.textContent='重新开始';break}
+  btn.textContent='停止';display.textContent=sec+' 秒';
+  btn._interval=setInterval(()=>{sec--;if(display)display.textContent=(sec>0?sec:0)+' 秒';if(sec<=0){clearInterval(btn._interval);btn._interval=null;btn.textContent='重新开始';toast('等待结束')}},1000);break;
+ }
+ case 'back-edit':S.tab='editor';S.preview=false;adminRender();break;
+ case 'tab':{
+  S.tab=id;S.edit=null;
+  if(id==='assets')await loadAssets();
+  adminRender();break;
+ }
+ case 'logout':await api('/api/admin/logout',{method:'POST'});S.admin=false;loginRender();break;
+ case 'new-item':newItem();break;
+ case 'edit-item':S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';adminRender();break;
+ case 'add-block':S.edit.content.blocks.push(blankBlock(id));adminRender();break;
+ case 'remove-block':S.edit.content.blocks.splice(Number(id),1);adminRender();break;
+ case 'move-block':{
+  const i=Number(id),j=i+Number(el.dataset.dir),arr=S.edit.content.blocks;
+  if(j>=0&&j<arr.length){[arr[i],arr[j]]=[arr[j],arr[i]];adminRender();}break;
+ }
+ case 'clear-asset':S.edit.content.blocks[Number(id)].assetId='';adminRender();break;
+ case 'save-item':await saveCurrent(false);break;
+ case 'publish-item':await saveCurrent(true);break;
+ case 'quick-status':{
+  const original=S.items.find(x=>x.id===id),item=structuredClone(original);item.status=item.status==='published'?'draft':'published';
+  await api('/api/admin/items/'+id,{method:'PUT',...jsonBody(item)});await refreshPanel();toast(item.status==='published'?'内容已发布':'内容已下架');break;
+ }
+ case 'copy-url':
+  await navigator.clipboard.writeText(location.origin+itemHref(S.items.find(x=>x.id===id)));toast('公开链接已复制');break;
+ case 'copy-current':{
+  await navigator.clipboard.writeText(location.origin+itemHref(S.edit));toast('链接已复制');break;
+ }
+ case 'preview-item':
+  if(!S.edit)return;
+  await showReader(S.edit.slug,S.edit);break;
+ case 'delete-item':{
+  if(!S.edit?.id||!confirm('确定永久删除「'+S.edit.title+'」？删除后公开链接将失效。'))return;
+  await api('/api/admin/items/'+S.edit.id,{method:'DELETE'});S.edit=null;S.tab='library';await refreshPanel();toast('已删除');break;
+ }
+ case 'revisions':{
+  const data=await api('/api/admin/revisions?id='+encodeURIComponent(S.edit.id));
+  openModal('<h2>历史版本</h2><p>最近的30次修改记录。恢复会创建一个新版本。</p>'+data.revisions.map(v=>'<div class="flex space" style="margin:10px 0"><span>v'+v.version+' · '+fmt(v.created_at)+'</span><button class="btn sm" data-action="restore" data-id="'+v.id+'">恢复此版本</button></div>').join('')+'<button class="btn" data-action="close-modal">关闭</button>');break;
+ }
+ case 'restore':{
+  if(!confirm('恢复历史版本将覆盖当前内容，继续吗？'))return;
+  const v=await api('/api/admin/restore',{method:'POST',...jsonBody({id})});
+  S.edit=v.item;closeModal();await loadAdmin();adminRender();toast('已恢复历史版本');break;
+ }
+ case 'pick-asset':S.picking=Number(id);await loadAssets();openModal('<h2>选择文件</h2><p>从已上传的素材库选择</p><div class="asset-grid">'+S.assets.map(a=>assetCard(a,true)).join('')+'</div><div style="margin-top:15px"><button class="btn" data-action="close-modal">取消</button></div>');break;
+ case 'select-asset':S.edit.content.blocks[S.picking].assetId=id;S.picking=null;closeModal();adminRender();break;
+ case 'close-modal':closeModal();break;
+ case 'copy-asset':await navigator.clipboard.writeText(location.origin+asset(id));toast('素材链接已复制');break;
+ case 'delete-asset':
+  if(!confirm('确认删除这个文件？'))return;
+  await api('/api/admin/assets/'+id,{method:'DELETE'});await loadAssets();adminRender();toast('文件已删除');break;
+ case 'upload-assets':await uploadAssets();break;
+ case 'save-settings':{
+  const data=await api('/api/admin/settings',{method:'PUT',...jsonBody(S.settings)});
+  S.settings=data.settings;adminRender();toast('首页设置已保存');break;
+ }
+ case 'import-json':await importJSON();break;
+ case 'export-all':{
+  const data=await api('/api/admin/export');
+  download('MSWQ-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(data,null,2),'application/json');break;
+ }
+ default:break;
+ }
+}
+async function saveCurrent(publish){
+ if(!S.edit)return;
+ const item=structuredClone(S.edit);if(publish)item.status='published';
+ if(!item.title.trim())return toast('请填写标题');
+ if(['link','document'].includes(item.kind)){
+  const link=item.kind==='link'?item.content.url:item.content.docUrl;
+  if(link&&!urlOk(link))return toast('链接地址必须以 https:// 或 http:// 开头');
+ }
+ const isUpdate=!!item.id;
+ const opts={method:isUpdate?'PUT':'POST',...jsonBody(item)};
+ const res=await api('/api/admin/items'+(isUpdate?'/'+item.id:''),opts);
+ S.edit=res.item;await loadAdmin();adminRender();toast(publish?'已发布，公开页面立即生效':'内容已保存');
+}
+async function uploadAssets(){
+ const input=$('#assetUpload'),files=[...(input?.files||[])];
+ if(!files.length)return toast('请先选择文件');
+ let success=0;
+ for(const file of files){
+  if(file.size>12000000){toast('文件超过12MB: '+file.name);continue}
+  let mime=file.type;
+  if(!mime){const ext=file.name.split('.').pop().toLowerCase();mime={docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',txt:'text/plain',zip:'application/zip'}[ext]||'application/octet-stream'}
+  await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+  success++;
+ }
+ await loadAssets();adminRender();toast('成功上传 '+success+' 个文件');
+}
+async function importJSON(){
+ const file=$('#importFile')?.files?.[0];if(!file)return toast('请选择 JSON 文件');
+ if(file.size>9000000)return toast('备份文件超过限制');
+ let data;try{data=JSON.parse(await file.text())}catch{return toast('不是有效的 JSON')}
+ const response=await api('/api/admin/import',{method:'POST',...jsonBody({payload:data})});
+ S.tab='library';await refreshPanel();toast('已导入 '+response.count+' 个草稿'+(response.warnings?.length?'，部分附件需重新上传':''));
+}
+function openModal(content){closeModal();const wrap=document.createElement('div');wrap.id='currentModal';wrap.className='modal-backdrop';wrap.innerHTML='<div class="modal" role="dialog" aria-modal="true">'+content+'</div>';document.body.appendChild(wrap)}
+function closeModal(){$('#currentModal')?.remove()}
+function download(name,content,type){const u=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+document.addEventListener('click',async e=>{
+ const b=e.target.closest('[data-action]');if(!b)return;
+ try{await perform(b.dataset.action,b.dataset.id,b)}catch(err){console.error(err);toast('操作失败：'+err.message)}
+});
+document.addEventListener('submit',async e=>{
+ if(e.target.id!=='loginForm')return;e.preventDefault();
+ try{
+  await api('/api/admin/login',{method:'POST',...jsonBody({password:$('#adminPass').value})});
+  S.admin=true;await loadAdmin();adminRender();
+ }catch(err){loginRender(err.message)}
+});
+document.addEventListener('input',e=>{
+ const t=e.target;
+ if(t.id==='homeSearch'){
+  const caret=t.selectionStart;S.search=t.value;homeRender();
+  const next=$('#homeSearch');next.focus();next.setSelectionRange(caret,caret);return;
+ }
+ if(t.id==='adminSearch'){S.search=t.value;const caret=t.selectionStart;adminRender();const n=$('#adminSearch');n.focus();n.setSelectionRange(caret,caret);return;}
+ if(t.dataset.field){
+  const key=t.dataset.field;
+  if(S.tab==='settings'){S.settings[key]=t.value;return}
+  if(!S.edit)return;
+  if(key==='tags')S.edit.tags=t.value.split(',').map(x=>x.trim()).filter(Boolean);
+  else if(key==='sort_order')S.edit.sort_order=Number(t.value)||0;
+  else if(key==='memberNames'){
+   const names=t.value.split(/[\n,，]/).map(x=>x.trim()).filter(Boolean);
+   S.edit.content.members=names.map((name,i)=>({id:S.edit.content.members.find(m=>m.name===name)?.id||crypto.randomUUID(),name,label:(i+1)+'号'}));
+  }else if(['docUrl','templateId','url'].includes(key))S.edit.content[key]=t.value;
+  else S.edit[key]=t.value;
+ }
+ if(t.dataset.block!==undefined&&S.edit){
+  const block=S.edit.content.blocks[Number(t.dataset.block)];
+  if(block)block[t.dataset.bfield]=t.dataset.bfield==='seconds'?Number(t.value):t.value;
+ }
+});
+document.addEventListener('change',e=>{
+ const t=e.target;
+ if(t.dataset.field==='kind'&&S.edit){
+  S.edit.kind=t.value;S.edit.content.blocks=S.edit.content.blocks||[];
+  adminRender();
+ }
+});
+async function boot(){
+ if(location.pathname==='/admin')return openAdmin();
+ if(location.pathname.startsWith('/view/'))return showReader(decodeURIComponent(location.pathname.slice(6)));
+ await showHome();
+}
+boot();
+})();
