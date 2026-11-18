@@ -115,7 +115,7 @@ async function importBundle(env,body){
   for(const step of (source.steps||[]).slice(0,600)){
    const kind=String(step.type||'speech');
    const typemap={speech:'bilingual',note:'hint',wait:'wait',attachment:'file',link:'button',section:'section',text:'text'};
-   let converted={id:crypto.randomUUID(),type:typemap[kind]||'text',title:step.title||'',zh:step.zh||'',en:step.en||'',text:step.content||step.text||'',seconds:Number(step.seconds)||60,speakerId:step.memberId||step.speakerId||step.actorId||'',links:step.links||[],assetId:'',files:[]};
+   let converted={id:crypto.randomUUID(),type:typemap[kind]||'text',title:step.title||'',zh:step.contentZh||step.zh||'',en:step.contentForeign||step.en||'',text:step.content||step.text||step.wait||'',seconds:Number(step.seconds)||(String(step.wait||'').includes('分钟')?60*Number.parseFloat(step.wait):Number.parseFloat(step.wait))||60,speakerId:step.memberId||step.speakerId||step.actorId||'',links:step.links||[],assetId:'',files:[]};
    if(step.files?.length){
     for(const file of step.files){
      const entry=payload.attachments?.[file.id];
@@ -136,7 +136,7 @@ async function importBundle(env,body){
    blocks.push(converted);
   }
   const members=(source.members||[]).map(m=>({id:String(m.id||crypto.randomUUID()),name:m.name||m.no||'成员',label:m.no||'',role:m.role||'',gender:m.gender||''}));
-  const item=normalizeItem({kind:isGroup?'group':'personal',title:source.name||'导入流程',description:source.description||source.note||'',category:source.category||'',tags:source.tags||[],content:{blocks,members,keywords:source.keywords||[],source:'legacy-import'},status:'draft'});
+  const item=normalizeItem({kind:isGroup?'group':'personal',title:source.name||'导入流程',description:source.description||source.note||'',category:source.category||'',tags:source.tags||[],content:{blocks,members,keywords:source.keywords||[],legacyMeta:{navOrder:source.navOrder||[],navDisabled:source.navDisabled||[],customNavGroups:source.customNavGroups||[],lang:source.lang||''},source:'legacy-import'},status:'draft'});
   item.slug+='-'+crypto.randomUUID().slice(0,5);
   done.push(await saveItem(env,item));
  }
@@ -179,7 +179,7 @@ async function handler(req,env){
    return fail('密码错误',401);
   }
   await env.DB.prepare('DELETE FROM login_attempts WHERE ip=?').bind(ipHash).run();
-  return out({ok:true},{valueOf:()=>200}, {'set-cookie':cookie(await newSession(env))});
+  return out({ok:true},200, {'set-cookie':cookie(await newSession(env))});
  }
  if(p.startsWith('/api/admin/')||p==='/admin/legacy-editor'){
   if(!await sessionValid(req,env))return fail('请先登录管理后台',401);
