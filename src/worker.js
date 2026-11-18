@@ -23,7 +23,7 @@ async function hmac(secret,text){
  return new Uint8Array(await crypto.subtle.sign('HMAC',key,enc(text)));
 }
 async function sessionValid(req,env){
- if(!env.SESSION_SECRET)return false;
+ if(!env.ADMIN_PASSWORD)return false;
  const token=(req.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('mswq_session='));
  if(!token)return false;
  const pieces=token.slice(13).split('.');
@@ -32,7 +32,7 @@ async function sessionValid(req,env){
   const payload=new TextDecoder().decode(fromBase64url(pieces[0]));
   const parsed=JSON.parse(payload);
   if(!parsed.exp || parsed.exp<Date.now() || parsed.exp>Date.now()+8*86400000)return false;
-  const expected=await hmac(env.SESSION_SECRET,pieces[0]);
+  const expected=await hmac(env.SESSION_SECRET||env.ADMIN_PASSWORD+':mswq-v1',pieces[0]);
   const received=fromBase64url(pieces[1]);
   return expected.length===received.length&&expected.every((v,i)=>v===received[i]);
  }catch{return false;}
@@ -40,7 +40,7 @@ async function sessionValid(req,env){
 async function newSession(env){
  const expires=Date.now()+7*86400000;
  const payload=base64url(enc(JSON.stringify({exp:expires,nonce:crypto.randomUUID()})));
- return payload+'.'+base64url(await hmac(env.SESSION_SECRET,payload));
+ return payload+'.'+base64url(await hmac(env.SESSION_SECRET||env.ADMIN_PASSWORD+':mswq-v1',payload));
 }
 function cookie(token){return 'mswq_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800';}
 function checkOrigin(req){const origin=req.headers.get('origin');return !origin||origin===new URL(req.url).origin;}
@@ -167,6 +167,7 @@ async function handler(req,env){
  if(method==='GET'&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop());
  if(method==='POST'&&p==='/api/admin/login'){
   if(!checkOrigin(req))return fail('请求来源不合法',403);
+  if(!env.ADMIN_PASSWORD)return fail('请先在 Cloudflare Worker 中设置 ADMIN_PASSWORD 密钥',503);
   const ip=req.headers.get('cf-connecting-ip')||'unknown';
   const ipHash=base64url(await digest('mswq-'+ip));
   let row=await env.DB.prepare('SELECT * FROM login_attempts WHERE ip=?').bind(ipHash).first();
@@ -283,7 +284,6 @@ async function handler(req,env){
 export default {async fetch(req,env){
  try{
   if(!env.DB||!env.FILES)return fail('MSWQ 存储绑定未配置',503);
-  if(!env.ADMIN_PASSWORD||!env.SESSION_SECRET)return fail('管理员密钥尚未配置',503);
   return await handler(req,env);
  }catch(err){
   console.error('MSWQ error',err);
