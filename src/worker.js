@@ -205,7 +205,7 @@ async function handler(req,env){
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(req))return fail('请求来源不合法',403);
  }
  if(method==='GET'&&p==='/admin/legacy-editor')return html(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'),true);
- if(method==='GET'&&p==='/admin/docx-editor')return html(ASSETS.docxAdmin,true);
+ if(method==='GET'&&p==='/admin/docx-editor')return html(ASSETS.docx.replace(/<style id="mswq-docx-public-only">[\s\S]*?<\/style>/,'').replaceAll('/api/docx/','/api/admin/docx/'),true);
  if(p.startsWith('/api/admin/docx/')){
   const remotePath=p.replace('/api/admin/docx/','/api/');
   if(!/^\/api\/(?:templates(?:\/[a-f0-9-]{16,60})?|templates\/[a-f0-9-]{16,60}\/(?:docx|version)|login|logout|session|password|order)$/.test(remotePath))
