@@ -39,7 +39,7 @@ function homeRender(){
  const c=S.settings||{},types=['all','personal','group','document','page','link'];
  const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&[x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ').toLowerCase().includes(S.search.toLowerCase()));
  const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'</div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind])+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>查看内容 →</span></div></div></a>').join('');
- root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
+ root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
 function anchorButton(label,url){
  return urlOk(url)?'<a class="action-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label||'打开链接')+' ↗</a>':'';
@@ -82,8 +82,8 @@ async function showReader(slugText,localItem=null){
  const nav=blocks.map((b,i)=>'<button class="navlink '+(b.type==='hint'?'hint':'')+'" data-action="jump" data-id="'+esc(b.id||'b'+i)+'">'+(i+1)+'. '+esc(b.title||b.text||blockNames[b.type]||'内容')+'</button>').join('');
  let body='';
  if(item.kind==='document'){
-  const docUrl=content.docUrl||((S.settings?.docx_url||'')+(content.templateId?'?template='+encodeURIComponent(content.templateId):''));
-  body='<div class="readonly-notice">此文档工作台由原有文档服务提供，MSWQ 不会在前台暴露本站的后台入口。</div>'+(urlOk(docUrl)?'<iframe class="doc-frame" title="文档在线工作台" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe>':'<div class="empty">尚未配置文档工具链接</div>');
+  const baseDoc=content.docUrl||S.settings?.docx_url||'/docx';const docUrl=baseDoc+(content.templateId?(baseDoc.includes('?')?'&':'?')+'template='+encodeURIComponent(content.templateId):'');
+  body='<div class="readonly-notice">DOCX 访客工作台只允许浏览、填写和导出。原文档模板服务不在此页面提供管理员登录入口。</div>'+(urlOk(docUrl)?'<iframe class="doc-frame" title="文档在线工作台" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe>':'<div class="empty">尚未配置文档工具链接</div>');
  }else if(item.kind==='link'){
   body='<div class="block"><h2>'+esc(item.title)+'</h2><p>'+esc(item.description||'外部链接')+'</p>'+anchorButton('打开工具',content.url)+'</div>';
  }else{
@@ -144,7 +144,7 @@ function editorHtml(){
  const select='<select data-field="kind">'+Object.keys(typeNames).map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+t+'">'+typeNames[t]+'</option>').join('')+'</select>';
  let main='<div class="admin-panel" style="margin-top:0"><div class="panel-head"><h2>基本信息</h2><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></div><div class="two">'+field('标题',x.title,'title','例如：个人沟通流程')+'<div class="field"><label>内容类型</label>'+select+'</div></div>'+field('公开路径（slug）',x.slug,'slug','不填写时自动生成')+field('简介',x.description,'description','一句话介绍此内容','textarea')+'<div class="three">'+field('分类',x.category,'category','例如：客服')+field('标签（逗号分隔）',(x.tags||[]).join(', '),'tags','标签1, 标签2')+field('首页排序数字',x.sort_order,'sort_order','数字越小越靠前')+'</div>'+field('封面图片（可填写素材资源 URL）',x.thumbnail,'thumbnail','/api/asset/...')+'</div>';
  if(x.kind==='document'){
-  main+=row('文档模板入口','可以填写完整旧工具链接，或在这里配置模板 ID',field('文档工作台 URL',c.docUrl||S.settings?.docx_url||'','docUrl','https://...')+field('指定模板 ID（可选）',c.templateId||'','templateId','原工具 template 参数'));
+  main+=row('文档模板入口','可以填写完整旧工具链接，或在这里配置模板 ID',field('文档工作台 URL',c.docUrl||S.settings?.docx_url||'/docx','docUrl','/docx')+field('指定模板 ID（可选）',c.templateId||'','templateId','原工具 template 参数'));
  }else if(x.kind==='link'){
   main+=row('外部工具跳转','只支持 http/https 链接',field('目标网址',c.url||'','url','https://example.com'));
  }else{
@@ -182,7 +182,7 @@ function assetCard(a,picker=false){
 function settingsHtml(){
  const s=S.settings||{};
  return row('首页文案与展示','只影响本站的公开首页，不会覆盖任何旧系统',
-  field('网站名称',s.brand,'brand')+field('首页大标题',s.headline,'headline')+field('首页说明',s.description,'description','','textarea')+field('公告（可留空）',s.announcement,'announcement','','textarea')+field('页脚版权文字',s.footer,'footer')+field('原 DOCX 工具默认网址',s.docx_url,'docx_url')+'<div class="warning">文档工具暂时通过独立服务加载，旧服务的内部权限并不受本站控制。真正移除旧工具的管理员入口需要独立迁移原有 DOCX 功能。</div><button class="btn green" data-action="save-settings">保存网站设置</button>');
+  field('网站名称',s.brand,'brand')+field('首页大标题',s.headline,'headline')+field('首页说明',s.description,'description','','textarea')+field('公告（可留空）',s.announcement,'announcement','','textarea')+field('页脚版权文字',s.footer,'footer')+'<div class="field"><label>公开首页布局</label><select data-field="layout"><option value="grid" '+(s.layout==='grid'?'selected':'')+'>标准卡片</option><option value="compact" '+(s.layout==='compact'?'selected':'')+'>紧凑四列</option><option value="list" '+(s.layout==='list'?'selected':'')+'>横向列表</option></select></div>'+field('DOCX 公开工作台路径',s.docx_url,'docx_url')+'<div class="notice">MSWQ 的 DOCX 公开页面已去除管理员按钮，并通过只读接口加载原模板。模板增删、原文编辑仍需在原有文档后台操作，后续可完整迁移到 MSWQ。</div><button class="btn green" data-action="save-settings">保存网站设置</button>');
 }
 function importHtml(){
  return row('导入旧版流程','从上传的原始编辑器导出「编辑备份 JSON」，再上传到这里',
