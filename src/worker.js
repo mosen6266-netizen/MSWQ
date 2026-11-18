@@ -82,7 +82,7 @@ function record(r,includeContent=true){
 }
 async function config(env){
  const rows=await env.DB.prepare('SELECT key,value FROM settings').all();
- const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'https://ms-khmb.mosen6266-ms007.workers.dev/'};
+ const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx'};
  for(const {key,value} of rows.results||[])out[key]=value;
  return out;
 }
@@ -158,6 +158,23 @@ async function handler(req,env){
  if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'public,max-age=300','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'public,max-age=300','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/legacy-bridge.js')return new Response(ASSETS.bridge,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+ if(method==='GET'&&(p==='/docx'||p==='/docx/')){
+  const response=html(ASSETS.docx,true),heads=new Headers(response.headers);
+  heads.set('content-security-policy',"default-src 'self' data: blob:; script-src 'unsafe-inline' 'self' blob:; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'");
+  return new Response(ASSETS.docx,{status:200,headers:heads});
+ }
+ if(method==='GET'&&p==='/api/docx/session')return out({admin:false});
+ if(p.startsWith('/api/docx/')){
+  if(method!=='GET')return fail('公开文档服务不支持管理操作',405);
+  if(!/^\/api\/docx\/templates(?:\/[a-f0-9-]{16,60}\/(?:docx|version))?$/.test(p))return fail('文档接口不存在',404);
+  const target='https://ms-khmb.mosen6266-ms007.workers.dev'+p.replace('/api/docx/','/api/')+url.search;
+  const remote=env.DOCX_SERVICE?await env.DOCX_SERVICE.fetch(new Request(target,{method:'GET'})):await fetch(target);
+  const headers=new Headers({'cache-control':'no-store','x-content-type-options':'nosniff'});
+  for(const key of ['content-type','x-template-version','content-disposition','content-length']){
+   const value=remote.headers.get(key);if(value)headers.set(key,value);
+  }
+  return new Response(remote.body,{status:remote.status,headers});
+ }
  if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.0'});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
@@ -222,7 +239,7 @@ async function handler(req,env){
   const keys=['brand','headline','description','layout','footer','announcement','docx_url'];
   for(const key of keys)if(body[key]!==undefined){
    const val=cleanString(body[key],key==='description'?1200:500);
-   if(key==='docx_url'&&val&&!allowedUrl(val))return fail('文档工具网址必须是 HTTPS/HTTP 地址');
+   if(key==='docx_url'&&val&&!allowedUrl(val)&&!val.startsWith('/docx'))return fail('文档工具网址必须是 /docx 或 HTTPS/HTTP 地址');
    await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key,val).run();
   }
   return out({ok:true,settings:await config(env)});
