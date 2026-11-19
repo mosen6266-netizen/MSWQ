@@ -140,9 +140,16 @@ function validateSpecialContent(incoming){
 function mswqReaderAddBackLink(html){
  const home='https://mswq.mosen6266-ms007.workers.dev/';
  if(typeof html!=='string'||!html.toLowerCase().startsWith('<!doctype html>'))throw Error('原版 HTML 内容格式不正确');
- if(html.includes('data-mswq-home="true"'))return html;
  const css='\n.mswq-home-link{display:inline-flex;align-items:center;justify-content:center;width:max-content;max-width:100%;box-sizing:border-box;padding:8px 12px;margin:0 0 8px;color:#f1f1ef;background:#303234;border:1px solid #676a69;border-radius:9px;text-decoration:none;font-size:12px;font-weight:800;line-height:1.35;white-space:nowrap;cursor:pointer}.mswq-home-link:hover{color:#fff;border-color:#94b8a3;background:#3d4841}.mswq-home-link:focus-visible{outline:2px solid #71ce9c;outline-offset:3px}.top>.mswq-home-link{flex-shrink:0;margin:0 6px 0 0}\n';
- const link='<a data-mswq-home="true" class="mswq-home-link" href="'+home+'" aria-label="返回 MSWQ 首页">← 返回首页</a>';
+ // Prefer the exact preceding browser-history entry. For direct/deep links, use the
+ // same-origin referrer if available; the site homepage is only the final fallback.
+ const backCode='if(history.length>1){history.back();return false;}try{var r=new URL(document.referrer);if(r.origin===location.origin&&r.href!==location.href){location.assign(r.href);return false;}}catch(e){}return true;';
+ const link='<a data-mswq-home="true" class="mswq-home-link" href="'+home+'" aria-label="返回" onclick="'+backCode+'">← 返回</a>';
+ if(html.includes('data-mswq-home="true"')){
+  const updated=html.replace(/<a\s+data-mswq-home="true"[^>]*>[\s\S]*?<\/a>/i,link);
+  if(updated===html)throw Error('旧版返回按钮无法识别，拒绝覆盖');
+  return updated;
+ }
  if(!html.includes('</style></head>'))throw Error('原版 HTML 缺少样式结束位置');
  let output=html.replace('</style></head>',css+'</style></head>');
  const personal='<div class="reader-header-main">';
