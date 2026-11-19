@@ -131,7 +131,8 @@ async function syncOne(selected,publish,notify=report){
  const current=files().find(x=>x.kind===selected.kind&&x.data.id===selected.data.id)||selected;
  const {kind,data}=current;
  if(!data?.id){notify('没有有效流程标识，请先保存编辑器内容');return {ok:false,error:'流程ID缺失'}}
- const item=convert(data,kind),mapKey=kind+':'+data.id,remembered=mapped(),old=remembered[mapKey];
+ const item=convert(data,kind),mapKey=kind+':'+data.id,remembered=mapped();
+ let old=remembered[mapKey];
  const warnings=[];
  try{
   if(typeof window.mswqBuildExactExportHtml!=='function')throw new Error('原版 HTML 生成器尚未加载，请刷新编辑器后重试');
@@ -154,6 +155,12 @@ async function syncOne(selected,publish,notify=report){
     }catch(err){warnings.push((file.name||'附件')+': '+err.message)}
    }
   }
+  // Recover an existing published record by its stable slug even when the
+  // browser-side publish map was cleared. This preserves the original shared URL.
+  const listing=await req('/api/admin/items');
+  const known=(listing.items||[]).find(x=>x.id===old?.id&&x.kind===kind)||
+   (listing.items||[]).find(x=>x.kind===kind&&x.slug===item.slug);
+  old=known?{id:known.id,slug:known.slug}:null;
   // Keep content unlisted until the exact HTML has been saved successfully.
   item.status='draft';
   let response;
