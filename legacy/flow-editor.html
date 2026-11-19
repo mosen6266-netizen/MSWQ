@@ -2197,6 +2197,137 @@ function exportReader(){
   toast('纯查看版 HTML 已导出');
 }
 
+
+/* Global search and literal replacement within the selected group script. */
+let gReplaceScriptId=null;
+function gReplaceClearMark(){
+ document.querySelectorAll('.g-replace-target').forEach(e=>e.classList.remove('g-replace-target'));
+ document.querySelectorAll('.g-replace-mirror').forEach(e=>e.remove());
+}
+function gReplaceClose(){ $('#gReplaceDialog').classList.remove('show');gReplaceScriptId=null;gReplaceClearMark(); }
+function gReplaceOpen(){
+ const sc=current();if(!sc)return toast('请先选择群剧本');
+ gReplaceScriptId=sc.id;
+ const lang=sc.lang==='de'?'德语':'英文';
+ $('#gReplaceScope').options[0].textContent='全部话术：中文 + '+lang;
+ $('#gReplaceScope').options[2].textContent='仅'+lang+'话术';
+ $('#gReplaceScriptName').textContent='当前群剧本：「'+sc.name+'」。默认查找全部中文和'+lang+'话术；可选是否包含绿色提示。';
+ if(!$('#gReplaceFind').value){$('#gReplaceScope').value='both';$('#gReplaceIgnoreCase').checked=false;$('#gReplaceNotes').checked=false}
+ $('#gReplaceDialog').classList.add('show');gReplacePreview();$('#gReplaceFind').focus();
+}
+function gReplacePositions(text,needle,insensitive){
+ if(!needle)return [];
+ const h=insensitive?text.toLocaleLowerCase():text;
+ const n=insensitive?needle.toLocaleLowerCase():needle;
+ const found=[];let start=0,at;
+ while((at=h.indexOf(n,start))>=0){found.push({at,len:n.length});start=at+n.length}
+ return found;
+}
+function gReplacePlan(){
+ const sc=db.scripts.find(s=>s.id===gReplaceScriptId),needle=$('#gReplaceFind').value;
+ const to=$('#gReplaceWith').value,scope=$('#gReplaceScope').value,insensitive=$('#gReplaceIgnoreCase').checked;
+ const result={script:sc,needle,matches:[],changes:[],count:{zh:0,foreign:0,note:0},affected:new Set()};
+ if(!sc||!needle)return result;
+ let speechNo=0;
+ for(const step of sc.steps){
+  if(step.type==='speech')speechNo++;
+  const fields=step.type==='speech'?(scope==='zh'?['contentZh']:scope==='foreign'?['contentForeign']:['contentZh','contentForeign']):step.type==='note'&&$('#gReplaceNotes').checked?['content']:[];
+  for(const field of fields){
+   const before=String(step[field]??''),spans=gReplacePositions(before,needle,insensitive);
+   if(!spans.length)continue;
+   const kind=field==='contentZh'?'zh':field==='contentForeign'?'foreign':'note';
+   result.count[kind]+=spans.length;result.affected.add(step.id);
+   let after='',last=0;
+   for(const {at,len} of spans){
+    result.matches.push({stepId:step.id,field,kind,speechNo,before,at,len,index:result.matches.length});
+    after+=before.slice(last,at)+to;last=at+len;
+   }
+   after+=before.slice(last);
+   if(after!==before)result.changes.push({stepId:step.id,field,before,after});
+  }
+ }
+ return result;
+}
+function gReplacePreview(){
+ const plan=gReplacePlan(),count=plan.matches.length,apply=$('#gReplaceApply');
+ apply.disabled=!plan.needle||!plan.changes.length||plan.script?.id!==selectedScriptId;
+ apply.textContent=count?'替换全部（'+count+' 处）':'替换全部';
+ if(!plan.needle){$('#gReplaceResults').innerHTML='<div class="p-replace-summary">请输入文字或符号后预览每处匹配。</div>';return;}
+ let out='<div class="p-replace-summary">找到 '+count+' 处 · 中文 '+plan.count.zh+' · '+(plan.script?.lang==='de'?'德文':'英文')+' '+plan.count.foreign+' · 绿色提示 '+plan.count.note+' · 涉及 '+plan.affected.size+' 个步骤</div>';
+ if(!count)out+='<p class="p-replace-hint">当前剧本没有匹配内容。</p>';
+ else {
+  out+='<div class="p-replace-preview-list">';
+  for(const m of plan.matches.slice(0,250)){
+   const begin=Math.max(0,m.at-36),end=Math.min(m.before.length,m.at+m.len+48);
+   const before=(begin?'…':'')+esc(m.before.slice(begin,m.at));
+   const hit=esc(m.before.slice(m.at,m.at+m.len));
+   const after=esc(m.before.slice(m.at+m.len,end))+(end<m.before.length?'…':'');
+   const label=m.kind==='note'?'绿色提示':m.kind==='zh'?'中文':plan.script.lang==='de'?'德文':'英文';
+   const where=m.kind==='note'?'绿色提示':'第 '+m.speechNo+' 条话术';
+   out+='<button class="p-replace-preview-item p-replace-jump" type="button" data-g-replace-index="'+m.index+'"><span class="p-replace-preview-label">'+where+' · '+label+' · 第 '+(m.index+1)+' 处 ↗</span><span class="p-replace-before">'+before+'<mark class="p-replace-keyword">'+hit+'</mark>'+after+'</span></button>';
+  }
+  out+='</div>';
+  if(count>250)out+='<p class="p-replace-hint">仅列出前 250 处供定位；替换全部仍处理所有 '+count+' 处。</p>';
+ }
+ $('#gReplaceResults').innerHTML=out;
+}
+function gReplaceJump(index){
+ const m=gReplacePlan().matches[index];
+ if(!m||gReplaceScriptId!==selectedScriptId)return;
+ $('#gReplaceDialog').classList.remove('show');gReplaceClearMark();
+ selectedMemberId='all';selectedStepId=m.stepId;
+ if(m.kind!=='note')selectedSpeechId=m.stepId;
+ $('#search').value='';render();
+ requestAnimationFrame(()=>{
+  const card=[...$('#flow').querySelectorAll('.step[data-sid]')].find(e=>e.dataset.sid===m.stepId);
+  const input=[...(card?.querySelectorAll('[data-inline-field]')||[])].find(e=>e.dataset.inlineField===m.field);
+  if(!card||!input)return;
+  card.classList.add('g-replace-target');input.classList.add('g-replace-target');
+  card.scrollIntoView({block:'center',behavior:'instant'});
+  input.focus({preventScroll:true});
+  if(input.setSelectionRange)input.setSelectionRange(m.at,m.at+m.len);
+  if(input.tagName!=='TEXTAREA')return;
+  const mirror=document.createElement('div');mirror.className='g-replace-mirror';
+  const contents=document.createElement('div'),style=getComputedStyle(input);
+  for(const key of ['fontFamily','fontSize','fontWeight','letterSpacing','lineHeight','whiteSpace','overflowWrap','wordBreak','paddingTop','paddingRight','paddingBottom','paddingLeft','boxSizing','tabSize'])contents.style[key]=style[key];
+  contents.style.color='transparent';contents.style.whiteSpace='pre-wrap';contents.style.overflowWrap='break-word';
+  contents.append(document.createTextNode(input.value.slice(0,m.at)));
+  const hi=document.createElement('span');hi.className='g-replace-highlight';hi.textContent=input.value.slice(m.at,m.at+m.len);contents.append(hi);
+  contents.append(document.createTextNode(input.value.slice(m.at+m.len)+'\u200b'));mirror.append(contents);
+  mirror.style.cssText='position:fixed;pointer-events:none;z-index:50;overflow:hidden;border-radius:8px';
+  document.body.append(mirror);
+  const update=()=>{if(!input.isConnected){mirror.remove();return;}const r=input.getBoundingClientRect();mirror.style.left=r.left+'px';mirror.style.top=r.top+'px';mirror.style.width=r.width+'px';mirror.style.height=r.height+'px';contents.style.width=r.width+'px';contents.style.transform='translateY(-'+input.scrollTop+'px)'};
+  input.addEventListener('scroll',update,{passive:true});
+  $('#flow').addEventListener('scroll',update,{passive:true});
+  window.addEventListener('resize',update,{passive:true,once:true});
+  input.addEventListener('input',gReplaceClearMark,{once:true});update();
+ });
+}
+function gReplaceApply(){
+ const plan=gReplacePlan(),sc=plan.script;
+ if(!sc||sc.id!==selectedScriptId||!plan.needle||!plan.changes.length)return gReplacePreview();
+ for(const c of plan.changes){
+  const step=sc.steps.find(s=>s.id===c.stepId);
+  if(!step||String(step[c.field]??'')!==c.before){toast('剧本内容已变化，请重新预览');return gReplacePreview();}
+ }
+ for(const c of plan.changes)sc.steps.find(s=>s.id===c.stepId)[c.field]=c.after;
+ if(!persistNow(false)){
+  for(const c of plan.changes)sc.steps.find(s=>s.id===c.stepId)[c.field]=c.before;
+  toast('保存失败，已撤销本次替换。请检查本地存储空间');return;
+ }
+ const n=plan.matches.length;gReplaceClose();render();toast('已替换 '+n+' 处并保存到本机');
+}
+$('#gReplaceTrigger').addEventListener('click',gReplaceOpen);
+$('#gReplaceDialog').addEventListener('click',e=>{
+ if(e.target.id==='gReplaceDialog'||e.target.closest('[data-g-replace-close]'))gReplaceClose();
+ const b=e.target.closest('[data-g-replace-index]');if(b)gReplaceJump(Number(b.dataset.gReplaceIndex));
+});
+['gReplaceFind','gReplaceWith','gReplaceScope','gReplaceIgnoreCase','gReplaceNotes'].forEach(id=>{
+ $('#'+id).addEventListener('input',gReplacePreview);$('#'+id).addEventListener('change',gReplacePreview);
+});
+$('#gReplaceApply').addEventListener('click',gReplaceApply);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#gReplaceDialog').classList.contains('show'))gReplaceClose()});
+
 $('#newScriptBtn').onclick=()=>openScript(false);
 $('#renameScriptBtn').onclick=()=>current()?openScript(true):alert('请先选择剧本');
 $('#deleteScriptBtn').onclick=requestDeleteScript;
