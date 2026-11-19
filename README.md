@@ -1,5 +1,11 @@
 # MSWQ · 统一内容管理与发布平台
 
+## 当前测试模式：后台免密码（2026-11-18）
+
+**当前已部署** `MSWQ_TEST_OPEN_ADMIN = true`。直接访问 `/admin` 可以编辑、保存、上传和发布，不需要设置 `ADMIN_PASSWORD` 或登录。原版话术编辑器 `/admin/legacy-editor` 同样免登录。**任何知道后台 URL 的访问者都可修改内容，仅适用于测试环境**。
+
+想恢复 MSWQ 的登录限制，可把 `src/worker.js` 顶部常量改回 `false`、配置 Cloudflare Secret `ADMIN_PASSWORD`，然后重新部署。**原来的 `ms-khmb` 服务没有被修改**；进入 `/admin/docx-editor` 时，DOCX 自身的管理员登录仍然由旧服务负责。
+
 MSWQ 使用 **Cloudflare Workers + 独立 D1 + 独立 R2**。后台编辑流程和文档，前台仅显示已发布内容。项目源代码在 \`main\` 分支。
 
 ## 地址
@@ -45,7 +51,7 @@ MSWQ 使用 **Cloudflare Workers + 独立 D1 + 独立 R2**。后台编辑流程�
 - Service Binding: \`DOCX_SERVICE -> ms-khmb\`
 - 密钥: \`ADMIN_PASSWORD\`（需要手动配置，可选增加独立 \`SESSION_SECRET\`）
 
-**必须手工配置管理员密钥（不能提交仓库）：**
+**以后重新开启密码模式时才需要配置管理员密钥（目前测试模式不需要）：**
 
 在 Cloudflare Dashboard → Workers & Pages → \`mswq\` → Settings → Variables and Secrets → Add，选择 **Secret**：
 
@@ -54,7 +60,7 @@ Name: ADMIN_PASSWORD
 Value: <your own strong random password>
 \`\`\`
 
-保存/部署后打开 \`/admin\`，输入该密码登录。登录签名使用 \`SESSION_SECRET\`（若存在），否则采用独立的 \`ADMIN_PASSWORD\` 派生的密钥。公开前台不要求此密钥。建议另行配置 \`SESSION_SECRET\`，并按需要轮换密码。
+仅将测试模式关闭并部署后，后台才需要输入该密码登录。登录签名使用 \`SESSION_SECRET\`（若存在），否则采用独立的 \`ADMIN_PASSWORD\` 派生的密钥。公开前台不要求此密钥。建议另行配置 \`SESSION_SECRET\`，并按需要轮换密码。
 
 ## 源代码
 
