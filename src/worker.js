@@ -201,7 +201,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.1.0',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.1.1',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -231,7 +231,13 @@ async function handler(req,env){
   if(!MSWQ_TEST_OPEN_ADMIN && !await sessionValid(req,env))return fail('请先登录管理后台',401);
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(req))return fail('请求来源不合法',403);
  }
- if(method==='GET'&&p==='/admin/legacy-editor')return adminEmbeddedHtml(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'));
+ if(method==='GET'&&p==='/admin/legacy-editor'){
+  // IMPORTANT: the legacy editor contains literal </body> sequences inside
+  // exported reader HTML template strings. Inject ONLY at the final real
+  // closing body tag; replacing the first match corrupts the editor scripts.
+  const injected=ASSETS.legacy.replace(/<\/body>\s*<\/html>\s*$/i,'<script src="/assets/legacy-bridge.js" defer></script></body></html>');
+  return adminEmbeddedHtml(injected);
+ }
  if(method==='GET'&&p==='/admin/docx-editor'){
   // Always show edit/upload tools on MSWQ, but preserve the public visitor edition.
   const docx=ASSETS.docx
