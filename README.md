@@ -17,6 +17,10 @@ MSWQ 使用 **Cloudflare Workers + 独立 D1 + 独立 R2**。后台编辑流程�
 - DOCX 访客工作台（无管理员按钮）：\`/docx\`
 - 已发布的 DOCX 模板卡片：\`/view/docx-workspace\`
 
+## 前台 DOCX 页面（当前上线）
+
+前台内容卡片「制作文件」在**当前标签页**打开 `/view/docx-workspace`；网页顶部保留与首页一致的 MSWQ 导航栏，并在左上角显示「← 返回」。顶部导航栏下方由 DOCX 填写工作台占满剩余整个浏览器视口；不会再用受限的普通内容详情页，也不会新建标签页或跳转到 `/docx`。通过 `/docx?template=<ID>` 生成的各模板专属分享链接依然可单独打开纯 DOCX 工作台，公开访客仍不可修改模板。后台 `/admin` 左侧的 DOCX 管理入口不受影响。
+
 ## 后台直接内嵌工具（当前上线）
 
 MSWQ 后台 `/admin` 左侧菜单点击「原版流程编辑器」或「DOCX 模板后台」后，右侧整片工作区直接加载工具界面（完整视口高度、无外围标题栏及二次打开按钮），不再跳转或新建标签页。对应的独立路径 `/admin/legacy-editor`、`/admin/docx-editor` 仍保留作为同源内嵌页面。Worker 仅给这两个管理页面设置 `frame-ancestors 'self'`，其他来源无法嵌入。DOCX 的原有独立管理员鉴权由原 `ms-khmb` 服务处理；MSWQ 自身目前为免密码测试模式。
