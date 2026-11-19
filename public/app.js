@@ -65,12 +65,12 @@ function homeRender(){
  const c=S.settings||{},types=['all',...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k)))];
  if(S.filter!=='all'&&!types.includes(S.filter))S.filter='all';
  const matching=text=>String(text||'').toLowerCase().includes(S.search.toLowerCase());
- const items=S.items.filter(x=>(S.filter==='all'||(x.kind==='document'&&orderedCategoryIds(c).includes(x.category)?x.category:x.kind)===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
+ const items=S.items.filter(x=>(S.filter==='all'||(x.kind==='document'?(x.category||'document'):x.kind)===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
  const isBookmarkTab=S.filter==='bookmarks';
  const bookmarkRows=isBookmarkTab?S.bookmarkEntries.filter(x=>matching([x.title,x.note,x.url,x.collectionTitle].join(' '))):[];
  const busy=isBookmarkTab&&!S.bookmarksLoaded&&!S.bookmarksError;
  const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length+items.filter(x=>x.kind==='document').length:'…'):items.length;
- const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
+ const cards=(isBookmarkTab?items.filter(x=>x.kind==='document'):items).map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
  let content;
  if(isBookmarkTab){
   content=S.bookmarksError?'<div class="empty">网址收藏加载失败：'+esc(S.bookmarksError)+' <button class="btn sm" data-action="retry-bookmarks">重试</button></div>':
@@ -844,7 +844,7 @@ document.addEventListener('input',e=>{
  }
  if(t.dataset.field){
   const key=t.dataset.field;
-  if(key==='kind')return;
+  if(key==='kind'||key==='category'&&t.value==='__new_category__')return;
   if(S.tab==='settings'){S.settings[key]=t.value;return}
   if(!S.edit)return;
   if(key==='tags')S.edit.tags=t.value.split(',').map(x=>x.trim()).filter(Boolean);
