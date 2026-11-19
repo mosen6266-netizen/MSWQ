@@ -164,6 +164,14 @@ function record(r,includeContent=true){
  if(!r)return null;
  const z={id:r.id,kind:r.kind,status:r.status,title:r.title,slug:r.slug,description:r.description,category:r.category,tags:JSON.parse(r.tags||'[]'),sort_order:r.sort_order,thumbnail:r.thumbnail,created_at:r.created_at,updated_at:r.updated_at,version:r.version};
  if(includeContent)z.content=JSON.parse(r.content||'{}');
+ else {
+  // Only expose a validated standalone link; never expose arbitrary private
+  // content to public card listings. The entire card can open it in a new tab.
+  try{
+   const data=JSON.parse(r.content||'{}');
+   if(data.openStandalone===true&&typeof data.standaloneUrl==='string'&&allowedUrl(data.standaloneUrl))z.direct_url=data.standaloneUrl;
+  }catch{}
+ }
  return z;
 }
 async function config(env){
