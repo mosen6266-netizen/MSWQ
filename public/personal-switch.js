@@ -16,8 +16,8 @@
   // A versioned page can be safely cached without pinning an outdated version.
   const path='/view/'+encodeURIComponent(item.slug);
   return Number.isSafeInteger(Number(item.version))&&Number(item.version)>0
-   ?path+'?v='+encodeURIComponent(String(item.version))
-   :path;
+   ?path+'?v='+encodeURIComponent(String(item.version))+'&fast=1'
+   :path+'?fast=1';
  }
 
  function warmLink(item){
