@@ -586,7 +586,7 @@ case 'retry-bookmarks':{
  }
  case 'new-item':newItem();break;
  case 'new-special':newItem(id);break;
- case 'edit-item':S.returnTab=S.tab;S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';if(S.edit?.kind==='document')await loadDocxTemplates();adminRender();break;
+ case 'edit-item':S.returnTab=S.tab;S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';if(S.edit?.kind==='document'){await loadDocxTemplates();S.edit.category=S.edit.category||defaultDocxCategory();}adminRender();break;
  case 'add-block':S.edit.content.blocks.push(blankBlock(id));adminRender();break;
  case 'remove-block':S.edit.content.blocks.splice(Number(id),1);adminRender();break;
  case 'move-block':{
@@ -906,7 +906,7 @@ document.addEventListener('change',async e=>{
    return;
   }
   S.edit.kind=t.value;S.edit.content.blocks=S.edit.content.blocks||[];
-  if(t.value==='document')await loadDocxTemplates();
+  if(t.value==='document'){await loadDocxTemplates();S.edit.category=S.edit.category||defaultDocxCategory();}
   adminRender();
  }
 });
