@@ -1,3 +1,10 @@
+## 修复 DOCX 模板专属直达链接打开空白/未发布（2026-11-19）
+
+- 故障：DOCX 后台「复制专属链接」生成 `/view/docx-workspace?template=<UUID>`，但 `public/app.js` 中 `showReader` 错把 `docx-workspace` 当成 D1 `items.slug` 查找，导致新标签打开显示「页面不存在或尚未发布」。这一 URL 是 DOCX 工具的虚拟工作区，**不应要求每个模板在 MSWQ 内容管理中另行发布**。
+- 修复：当 `slugText === 'docx-workspace'` 时先通过现有公开 `/api/docx/templates` 读取模板目录，按 URL `template` 参数核对模板 UUID，构造只用于本次阅读的 `kind:'document'` 工作区并在原 MSWQ 页面中加载 `/docx?template=<UUID>&embed=1`。保留顶部深色栏和「返回」，不修改任何模板、原 DOCX 服务或其他 D1 内容。
+- 确认另一条模板 UUID 可以自动选择不同模板；过期/不存在的模板链接提示「此 DOCX 模板已不存在或暂不可访问」，不会误打开别的模板。旧 `/docx?template=...` 和已发布 DOCX 内容卡片仍可使用。
+- 线上真实浏览器复测：截图中的 `1713baaf-d9e2-4bcc-aaff-4209e8d89fdf` 可独立打开「新_客户建档模板」，13 个模板可见、原 Word 白纸预览正常、刷新后 iframe 与 UUID 保留且无 JavaScript 错误；第二个模板 `20c4773c-782c-4c17-819e-386a206ced6d` 正确打开「新_冻结令和资金返还令模板」。
+
 ## 群剧本导入、发布后永久保留编辑源（2026-11-19）
 
 - 问题根源：原版群剧本编辑器只把整个 `groupScriptManager.v6` JSON 写入 `localStorage`，包含大体积 Base64 图片的 HTML 导入容易超出浏览器本地配额。MSWQ 发布接口依然可从内存上传原版 HTML，因此出现「前台发布成功，刷新编辑器却消失」的不一致情况。
