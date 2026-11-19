@@ -474,6 +474,24 @@ async function handler(req,env){
   }else if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||availability.deleted_types.includes(item.kind))return fail('分类已删除，请恢复后再创建',409);
   try{return out({ok:true,item:await saveItem(env,item)},201)}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请更换 slug',409);throw e;}
  }
+ const exactMatch=p.match(new RegExp('^/api/admin/items/([a-f0-9-]{32,40})/export-html$'));
+ if(method==='PUT'&&exactMatch){
+  const id=exactMatch[1];
+  const item=await env.DB.prepare('SELECT id,kind,version,title,content FROM items WHERE id=?').bind(id).first();
+  if(!item)return fail('内容不存在',404);
+  if(!['personal','group'].includes(item.kind))return fail('仅个人流程和群剧本支持原版 HTML 直发',400);
+  if(req.headers.get('x-mswq-item-version')!==String(item.version))return fail('内容已更新，请重新发布以保证页面与最新数据一致',409);
+  const declared=Number(req.headers.get('content-length')||0);
+  if(declared>35_000_000)return fail('HTML 文件大于 35 MB，请减少附件后重试',413);
+  const bytes=await req.arrayBuffer();
+  if(bytes.byteLength<200||bytes.byteLength>35_000_000)return fail('HTML 导出内容为空或超过 35 MB',413);
+  const head=new TextDecoder().decode(bytes.slice(0,250));
+  const tail=new TextDecoder().decode(bytes.slice(-250));
+  if(!head.trimStart().toLowerCase().startsWith('<!doctype html>')||!tail.trimEnd().toLowerCase().endsWith('</html>'))return fail('仅接受原编辑器生成的完整 HTML 文件',400);
+  const signature=base64url(await digest(item.title+'\0'+item.content));
+  await env.FILES.put('published-readers/'+id+'.html',bytes,{httpMetadata:{contentType:'text/html; charset=utf-8'},customMetadata:{signature,kind:item.kind,version:String(item.version),source:'original-editor-export'}});
+  return out({ok:true,stored:true,bytes:bytes.byteLength,version:item.version});
+ }
  const match=p.match(/^\/api\/admin\/items\/([a-f0-9-]{32,40})$/);
  if(match){
   const id=match[1],old=await env.DB.prepare('SELECT * FROM items WHERE id=?').bind(id).first();
@@ -495,6 +513,7 @@ async function handler(req,env){
   if(method==='DELETE'){
    await env.DB.prepare('INSERT INTO revisions(id,item_id,version,data,created_at) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),id,old.version,JSON.stringify(record(old)),iso()).run();
    await env.DB.prepare('DELETE FROM items WHERE id=?').bind(id).run();
+   if(['personal','group'].includes(old.kind))await env.FILES.delete('published-readers/'+id+'.html');
    return out({ok:true});
   }
  }
