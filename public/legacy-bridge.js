@@ -183,7 +183,7 @@ async function syncOne(selected,publish,notify=report){
    headers:{'content-type':'text/html; charset=utf-8','x-mswq-item-version':String(saved.version)},
    body:exportedHtml
   });
-  if(!upload.stored)throw new Error('HTML 存储未确认成功，页面仍保留为草稿');
+  if(!upload.stored||upload.backButton!==true)throw new Error('服务器未确认返回首页按钮，已阻止本次发布，请刷新重试');
   if(publish){
    const published={...saved,status:'published'};
    const result=await req('/api/admin/items/'+saved.id,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(published)});
