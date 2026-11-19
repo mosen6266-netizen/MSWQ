@@ -410,6 +410,15 @@ function importHtml(){
 }
 async function refreshPanel(){if(!S.admin)return;await loadAdmin();adminRender()}
 async function loadAssets(){const x=await api('/api/admin/assets');S.assets=x.assets}
+async function reorderCategory(source,target,step=0){
+ const order=orderedCategoryIds(S.settings),from=order.indexOf(source);
+ const to=target?order.indexOf(target):from+step;
+ if(from<0||to<0||to>=order.length||from===to)return;
+ order.splice(from,1);order.splice(to,0,source);
+ const result=await api('/api/admin/types/order',{method:'PUT',...jsonBody({order})});
+ S.settings.type_order=result.type_order;adminRender();toast('分类顺序已保存，前台已同步');
+}
+
 async function perform(action,id,el){
  switch(action){
  case 'filter':S.filter=id;homeRender();break;
@@ -490,28 +499,50 @@ async function perform(action,id,el){
   adminRender();toast(hidden?'已隐藏「'+label+'」的前台分类按钮':'已恢复「'+label+'」的分类按钮');
   break;
  }
+ case 'new-category':
+  openModal('<h2>＋ 新增分类</h2><div class="field"><label>分类名称</label><input id="customTypeName" maxlength="30" placeholder="输入新分类名称"></div><div class="flex end"><button class="btn" data-action="close-modal">取消</button><button class="btn green" data-action="create-custom-type">保存分类</button></div>');
+  $('#customTypeName')?.focus();break;
+ case 'move-category':
+  await reorderCategory(id,null,Number(el.dataset.dir));break;
+ case 'rename-category':{
+  if(!Object.hasOwn(typeNames,id))return toast('分类不存在');
+  openModal('<h2>编辑分类名称</h2><p class="muted small">修改后会同步更新前台筛选名称，不改变内容类型和已有链接。</p><div class="field"><label>分类名称</label><input id="categoryRenameInput" maxlength="30" value="'+esc(typeNames[id])+'"></div><div class="flex end"><button class="btn" data-action="close-modal">取消</button><button class="btn green" data-action="save-category-name" data-id="'+esc(id)+'">保存名称</button></div>');
+  $('#categoryRenameInput')?.focus();$('#categoryRenameInput')?.select();break;
+ }
+ case 'save-category-name':{
+  const name=($('#categoryRenameInput')?.value||'').trim();
+  if(!name||name.length>30)return toast('分类名称须为1至30个字符');
+  const result=await api('/api/admin/types/name',{method:'PUT',...jsonBody({id,name})});
+  S.settings.custom_types=result.custom_types;
+  S.settings.type_labels=result.type_labels;
+  applyCustomTypes(S.settings);
+  closeModal();adminRender();toast('分类名称已保存');break;
+ }
  case 'delete-category':{
-  const type=(S.settings?.custom_types||[]).find(x=>x.id===id);
-  if(!type)return toast('只能删除自定义分类');
   const count=S.items.filter(x=>x.kind===id).length;
-  if(count)return toast('此分类还有 '+count+' 个内容，请先调整内容类型或隐藏分类');
-  if(!confirm('确定永久删除自定义分类「'+type.name+'」？此操作不会删除任何内容。'))break;
-  const updated=await api('/api/admin/types/'+encodeURIComponent(id),{method:'DELETE'});
-  S.settings.custom_types=updated.custom_types;
-  S.settings.hidden_types=updated.hidden_types;
-  applyCustomTypes(S.settings);adminRender();toast('分类「'+type.name+'」已删除');
-  break;
+  if(!Object.hasOwn(typeNames,id))return toast('分类不存在');
+  if(!confirm('确定删除分类「'+typeNames[id]+'」吗？\n\n该分类会从前台筛选栏和新建分类菜单移除。'+(count?'已有的 '+count+' 个内容':'')+'不会被删除，已分享的链接继续有效，可从“已删除分类”恢复。'))break;
+  const result=await api('/api/admin/types/'+encodeURIComponent(id),{method:'DELETE'});
+  S.settings.deleted_types=result.deleted_types;
+  S.settings.type_order=result.type_order;
+  adminRender();toast('分类已删除，原有内容保留');break;
+ }
+ case 'restore-category':{
+  const result=await api('/api/admin/types/restore',{method:'PUT',...jsonBody({id})});
+  S.settings.deleted_types=result.deleted_types;
+  S.settings.hidden_types=result.hidden_types;
+  S.settings.type_order=result.type_order;
+  adminRender();toast('分类已恢复并显示在前台');break;
  }
  case 'create-custom-type':{
   const name=($('#customTypeName')?.value||'').trim();
-  if(!name)return toast('请先输入分类名称');
-  if(name.length>30)return toast('分类名称不能超过30个字符');
+  if(!name||name.length>30)return toast('分类名称须为1至30个字符');
   const result=await api('/api/admin/types',{method:'POST',...jsonBody({name})});
   S.settings.custom_types=result.custom_types;
+  S.settings.type_order=result.type_order;
   applyCustomTypes(S.settings);
   if(S.edit)S.edit.kind=result.type.id;
-  closeModal();adminRender();toast('已新增分类「'+name+'」，可直接使用');
-  break;
+  closeModal();adminRender();toast('分类「'+name+'」已新增');break;
  }
  case 'save-item':await saveCurrent(false);break;
  case 'publish-item':await saveCurrent(true);break;
