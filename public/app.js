@@ -6,7 +6,12 @@ const $=selector=>document.querySelector(selector);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlOk=x=>{try{return ['http:','https:'].includes(new URL(x,location.origin).protocol)}catch{return false}};
 const asset=id=>id?'/api/asset/'+encodeURIComponent(id):'';
-const typeNames={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具'};
+const builtinTypes={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具'};
+const typeNames={...builtinTypes};
+function applyCustomTypes(settings){
+ for(const key of Object.keys(typeNames))if(!(key in builtinTypes))delete typeNames[key];
+ for(const t of settings?.custom_types||[])if(/^custom_[a-f0-9]{32}$/.test(t.id))typeNames[t.id]=t.name;
+}
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
 const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false};
 let toastTimer;
@@ -32,13 +37,13 @@ function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
 async function showHome(){
  document.title='MSWQ · 内容与工具中心';S.preview=false;
  root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
- try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;homeRender();}
+ try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;applyCustomTypes(S.settings);homeRender();}
  catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
 }
 function homeRender(){
- const c=S.settings||{},types=['all','personal','group','document','page','link'];
+ const c=S.settings||{},types=['all',...Object.keys(typeNames)];
  const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&[x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ').toLowerCase().includes(S.search.toLowerCase()));
- const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'</div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind])+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
+ const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'</div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
  root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
 function anchorButton(label,url){
@@ -77,6 +82,7 @@ async function showReader(slugText,localItem=null){
  root.innerHTML='<div class="loading center" style="padding:100px">正在打开内容…</div>';
  try{
  const item=localItem||(await api('/api/public/item/'+encodeURIComponent(slugText))).item;S.viewer=item;S.preview=!!localItem;
+ if(!S.settings){const pub=await api('/api/public');S.settings=pub.settings;applyCustomTypes(S.settings);}
  document.title=item.title+' · MSWQ';
  const content=item.content||{},blocks=content.blocks||[];
  const nav=blocks.map((b,i)=>'<button class="navlink '+(b.type==='hint'?'hint':'')+'" data-action="jump" data-id="'+esc(b.id||'b'+i)+'">'+(i+1)+'. '+esc(b.title||b.text||blockNames[b.type]||'内容')+'</button>').join('');
@@ -127,7 +133,7 @@ async function openAdmin(){
 }
 async function loadAdmin(){
  const [data,settings]=await Promise.all([api('/api/admin/items'),api('/api/admin/settings')]);
- S.items=data.items;S.settings=settings.settings;
+ S.items=data.items;S.settings=settings.settings;applyCustomTypes(S.settings);
 }
 function sideNav(){
  const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
@@ -174,7 +180,7 @@ function newItem(){
 function editorHtml(){
  const x=S.edit;if(!x)return '<div class="empty">请先从列表中选择需要编辑的内容</div>';
  const c=x.content||(x.content={blocks:[],members:[]});
- const select='<select data-field="kind">'+Object.keys(typeNames).map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+t+'">'+typeNames[t]+'</option>').join('')+'</select>';
+ const select='<select data-field="kind">'+Object.keys(typeNames).map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+esc(t)+'">'+esc(typeNames[t])+'</option>').join('')+'<option disabled>──────────</option><option value="__create_type__">＋ 新增分类…</option></select>';
  let main='<div class="admin-panel" style="margin-top:0"><div class="panel-head"><h2>基本信息</h2><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></div><div class="two">'+field('标题',x.title,'title','例如：个人沟通流程')+'<div class="field"><label>内容类型</label>'+select+'</div></div>'+field('公开路径（slug）',x.slug,'slug','不填写时自动生成')+field('简介',x.description,'description','一句话介绍此内容','textarea')+'<div class="three">'+field('分类',x.category,'category','例如：客服')+field('标签（逗号分隔）',(x.tags||[]).join(', '),'tags','标签1, 标签2')+field('首页排序数字',x.sort_order,'sort_order','数字越小越靠前')+'</div>'+field('封面图片（可填写素材资源 URL）',x.thumbnail,'thumbnail','/api/asset/...')+'</div>';
  if(x.kind==='document'){
   main+=row('文档模板入口','可以填写完整旧工具链接，或在这里配置模板 ID',field('文档工作台 URL',c.docUrl||S.settings?.docx_url||'/docx','docUrl','/docx')+field('指定模板 ID（可选）',c.templateId||'','templateId','原工具 template 参数'));
@@ -252,6 +258,17 @@ async function perform(action,id,el){
   if(j>=0&&j<arr.length){[arr[i],arr[j]]=[arr[j],arr[i]];adminRender();}break;
  }
  case 'clear-asset':S.edit.content.blocks[Number(id)].assetId='';adminRender();break;
+ case 'create-custom-type':{
+  const name=($('#customTypeName')?.value||'').trim();
+  if(!name)return toast('请先输入分类名称');
+  if(name.length>30)return toast('分类名称不能超过30个字符');
+  const result=await api('/api/admin/types',{method:'POST',...jsonBody({name})});
+  S.settings.custom_types=result.custom_types;
+  applyCustomTypes(S.settings);
+  if(S.edit)S.edit.kind=result.type.id;
+  closeModal();adminRender();toast('已新增分类「'+name+'」，可直接使用');
+  break;
+ }
  case 'save-item':await saveCurrent(false);break;
  case 'publish-item':await saveCurrent(true);break;
  case 'quick-status':{
@@ -348,6 +365,7 @@ document.addEventListener('input',e=>{
  if(t.id==='adminSearch'){S.search=t.value;const caret=t.selectionStart;adminRender();const n=$('#adminSearch');n.focus();n.setSelectionRange(caret,caret);return;}
  if(t.dataset.field){
   const key=t.dataset.field;
+  if(key==='kind')return;
   if(S.tab==='settings'){S.settings[key]=t.value;return}
   if(!S.edit)return;
   if(key==='tags')S.edit.tags=t.value.split(',').map(x=>x.trim()).filter(Boolean);
@@ -366,8 +384,19 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
  const t=e.target;
  if(t.dataset.field==='kind'&&S.edit){
+  if(t.value==='__create_type__'){
+   t.value=S.edit.kind;
+   openModal('<h2>＋ 新增分类</h2><p class="muted small">创建后将出现在所有内容的类型菜单和前台筛选栏中。</p><div class="field"><label>分类名称</label><input id="customTypeName" maxlength="30" placeholder="例如：法律文档、教程、资料库" autocomplete="off"></div><div class="flex" style="justify-content:flex-end"><button class="btn" data-action="close-modal">取消</button><button class="btn green" data-action="create-custom-type">确认新增分类</button></div>');
+   $('#customTypeName')?.focus();
+   return;
+  }
   S.edit.kind=t.value;S.edit.content.blocks=S.edit.content.blocks||[];
   adminRender();
+ }
+});
+document.addEventListener('keydown',e=>{
+ if(e.key==='Enter'&&e.target.id==='customTypeName'){
+  e.preventDefault();document.querySelector('[data-action="create-custom-type"]')?.click();
  }
 });
 async function boot(){
