@@ -223,12 +223,72 @@ function newItem(kind='personal'){
  S.edit={id:null,version:0,kind,status:'draft',title:label,slug:unique,description:'',category:'',tags:[],sort_order:1000,thumbnail:'',content:{blocks:[],members:[],keywords:[],entries:[],fields:[]}};
  S.tab='editor';adminRender();
 }
+
+function specialImagePicker(collection,index,assetId){
+ const id=Number(index),name=collection==='fields'?'名片图片':'网站图标';
+ return '<div class="special-image-tools">'+(assetId?'<div class="special-image-preview"><img loading="lazy" alt="'+name+'" src="'+asset(assetId)+'"></div>':'')+
+  '<label class="btn sm special-upload-label">直接上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" data-image-upload="'+collection+'" data-index="'+id+'"></label>'+
+  '<button class="btn sm" data-action="pick-special-image" data-collection="'+collection+'" data-id="'+id+'">从素材库选择</button>'+
+  (assetId?'<button class="btn sm danger" data-action="clear-special-image" data-collection="'+collection+'" data-id="'+id+'">移除图片</button>':'')+'</div>';
+}
+function specialMoveButtons(action,index,length,removeAction){
+ return '<div class="special-row-controls"><button class="btn sm" data-action="'+action+'" data-id="'+index+'" data-dir="-1" '+(!index?'disabled':'')+'>↑</button>'+
+  '<button class="btn sm" data-action="'+action+'" data-id="'+index+'" data-dir="1" '+(index>=length-1?'disabled':'')+'>↓</button>'+
+  '<button class="btn sm danger" data-action="'+removeAction+'" data-id="'+index+'">删除</button></div>';
+}
+function bookmarkEditorRows(entries){
+ return entries.map((e,i)=>'<div class="special-edit-row"><div class="special-row-heading"><strong>网址 '+(i+1)+'</strong>'+specialMoveButtons('move-bookmark',i,entries.length,'remove-bookmark')+'</div>'+
+  '<div class="two"><div class="field"><label>网站名称</label><input maxlength="140" placeholder="例如：常用工作网站" data-bookmark-index="'+i+'" data-prop="title" value="'+esc(e.title||'')+'"></div>'+
+  '<div class="field"><label>完整网址（https://）</label><input type="url" placeholder="https://example.com" data-bookmark-index="'+i+'" data-prop="url" value="'+esc(e.url||'')+'"></div></div>'+
+  '<div class="field"><label>说明 / 备注（可选）</label><textarea data-bookmark-index="'+i+'" data-prop="note" placeholder="写一段简短的网站说明">'+esc(e.note||'')+'</textarea></div>'+
+  '<div class="field"><label>网站封面图 / 图标（可选）</label>'+specialImagePicker('entries',i,e.assetId)+'</div></div>').join('')||
+  '<div class="empty">暂时没有收藏的网址，点击下方「＋ 添加网址」开始</div>';
+}
+function profileEditorRows(fields){
+ const labels={text:'文字内容',link:'网址链接',image:'图片'};
+ return fields.map((f,i)=>'<div class="special-edit-row"><div class="special-row-heading"><strong>自定义项目 '+(i+1)+'</strong>'+specialMoveButtons('move-profile',i,fields.length,'remove-profile')+'</div>'+
+  '<div class="two"><div class="field"><label>标签名称（你自己命名）</label><input maxlength="120" placeholder="例如：姓名、联系方式、作品图、任何名称" data-profile-index="'+i+'" data-prop="label" value="'+esc(f.label||'')+'"></div>'+
+  '<div class="field"><label>内容形式</label><select data-profile-index="'+i+'" data-prop="type">'+Object.keys(labels).map(k=>'<option value="'+k+'" '+(f.type===k?'selected':'')+'>'+labels[k]+'</option>').join('')+'</select></div></div>'+
+  (f.type==='image'?'<div class="field"><label>上传图片或从已有素材选择</label>'+specialImagePicker('fields',i,f.assetId)+'</div>'+
+    '<div class="field"><label>图片描述（可留空）</label><textarea data-profile-index="'+i+'" data-prop="value" placeholder="图片下方显示的说明文字">'+esc(f.value||'')+'</textarea></div>':
+    f.type==='link'?'<div class="field"><label>标签内容 · 网址</label><input type="url" maxlength="2048" data-profile-index="'+i+'" data-prop="value" placeholder="https://example.com" value="'+esc(f.value||'')+'"></div>':
+    '<div class="field"><label>标签内容 · 自由填写</label><textarea data-profile-index="'+i+'" data-prop="value" maxlength="3500" placeholder="例如：迈克；也可以输入多行文字">'+esc(f.value||'')+'</textarea></div>')+
+  '</div>').join('')||'<div class="empty">名片还没有任何资料项。点击下方按钮，自己建立标签和内容。</div>';
+}
+function specialEditorActions(x){
+ return '<div class="admin-panel"><div class="flex" style="flex-wrap:wrap"><button class="btn primary" data-action="save-item">保存草稿 / 修改</button>'+
+  '<button class="btn green" data-action="publish-item">'+(x.status==='published'?'保存并继续发布':'保存并发布到前台')+'</button>'+
+  '<button class="btn" data-action="preview-item">预览前台</button>'+
+  (x.id?'<button class="btn" data-action="copy-current">复制公开链接</button><button class="btn" data-action="revisions">历史版本</button><button class="btn danger" data-action="delete-item">删除内容</button>':'')+
+  '</div></div>';
+}
+function profileEditorHtml(x){
+ const c=x.content||(x.content={});const fields=c.fields||(c.fields=[]);
+ const items=row('名片项目 · 完全自定义','不预设姓名、电话、邮箱等信息；每项标签和内容都由你自己创建，图片也可以作为单独项目',
+  profileEditorRows(fields)+'<div class="editor-add"><button class="btn green" data-action="add-profile" data-id="text">＋ 文字标签</button>'+
+  '<button class="btn" data-action="add-profile" data-id="link">＋ 网址标签</button><button class="btn" data-action="add-profile" data-id="image">＋ 图片标签</button></div>');
+ const meta=row('名片页面设置','这里只控制前台显示标题和公开网址，不会在名片中自动添加个人资料字段',
+  '<details class="special-meta-details"><summary>修改名片页面标题、路径和展示设置</summary><div class="special-meta-inside">'+
+   field('名片在首页显示的标题',x.title,'title','个人名片')+
+   field('公开路径（slug）',x.slug,'slug','profile-xxx')+
+   field('页面简介（可选）',x.description,'description','','textarea')+
+   field('首页排序数字',x.sort_order,'sort_order','1000')+
+   field('封面图片 URL（可选）',x.thumbnail,'thumbnail','/api/asset/...')+
+  '</div></details>');
+ const aside='<aside class="editor-side"><strong>个人名片状态</strong><p class="small muted">'+(x.status==='published'?'已发布':'仅后台可见草稿')+'</p><p class="small muted">项目数：'+fields.length+'</p><p class="small muted">版本：'+x.version+'</p><p class="small muted wrap">/view/'+esc(x.slug||'保存后生成')+'</p></aside>';
+ return '<div class="editor-grid"><div>'+items+meta+specialEditorActions(x)+'</div>'+aside+'</div>';
+}
+
 function editorHtml(){
  const x=S.edit;if(!x)return '<div class="empty">请先从列表中选择需要编辑的内容</div>';
+ if(x.kind==='profile')return profileEditorHtml(x);
  const c=x.content||(x.content={blocks:[],members:[]});
  const select='<select data-field="kind">'+Object.keys(typeNames).map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+esc(t)+'">'+esc(typeNames[t])+'</option>').join('')+'<option disabled>──────────</option><option value="__create_type__">＋ 新增分类…</option></select>';
  let main='<div class="admin-panel" style="margin-top:0"><div class="panel-head"><h2>基本信息</h2><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></div><div class="two">'+field('标题',x.title,'title','例如：个人沟通流程')+'<div class="field"><label>内容类型</label>'+select+'</div></div>'+field('公开路径（slug）',x.slug,'slug','不填写时自动生成')+field('简介',x.description,'description','一句话介绍此内容','textarea')+'<div class="three">'+field('分类',x.category,'category','例如：客服')+field('标签（逗号分隔）',(x.tags||[]).join(', '),'tags','标签1, 标签2')+field('首页排序数字',x.sort_order,'sort_order','数字越小越靠前')+'</div>'+field('封面图片（可填写素材资源 URL）',x.thumbnail,'thumbnail','/api/asset/...')+'</div>';
- if(x.kind==='document'){
+ if(x.kind==='bookmarks'){
+  const entries=c.entries||(c.entries=[]);
+  main+=row('网址收藏 · 可随时编辑和排序','新增网站、修改名称或网址、上传图标。发布后前台会显示为可点击的网站卡片',bookmarkEditorRows(entries)+'<div class="editor-add"><button class="btn green" data-action="add-bookmark">＋ 添加网址</button></div>');
+ }else if(x.kind==='document'){
   main+=row('文档模板入口','可以填写完整旧工具链接，或在这里配置模板 ID',field('文档工作台 URL',c.docUrl||S.settings?.docx_url||'/docx','docUrl','/docx')+field('指定模板 ID（可选）',c.templateId||'','templateId','原工具 template 参数'));
  }else if(x.kind==='link'){
   main+=row('外部工具跳转','只支持 http/https 链接',field('目标网址',c.url||'','url','https://example.com'));
