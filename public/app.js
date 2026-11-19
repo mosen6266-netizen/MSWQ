@@ -89,6 +89,9 @@ async function showReader(slugText,localItem=null){
    if(!['https:','http:'].includes(target.protocol))throw Error('invalid protocol');
    const selectedTemplate=new URL(location.href).searchParams.get('template')||content.templateId;
    if(selectedTemplate)target.searchParams.set('template',selectedTemplate);
+   // /docx?template=... is also a public-facing link. Mark this nested document
+   // instance explicitly so it doesn't render the MSWQ shell inside itself.
+   if(target.origin===location.origin&&(target.pathname==='/docx'||target.pathname==='/docx/'))target.searchParams.set('embed','1');
    docUrl=target.href;
   }catch{
    root.innerHTML=publicHeader(true)+'<div class="empty">文档工作台链接无效，请在后台配置正确的地址。</div>';
@@ -370,6 +373,9 @@ document.addEventListener('change',e=>{
 async function boot(){
  if(location.pathname==='/admin')return openAdmin();
  if(location.pathname.startsWith('/view/'))return showReader(decodeURIComponent(location.pathname.slice(6)));
+ // Previously shared /docx?template=... and /?template=... should now have
+ // the same MSWQ navigation + back button as newly copied document links.
+ if((location.pathname==='/docx'||location.pathname==='/docx/'||location.pathname==='/')&&/^[a-f0-9-]{16,60}$/i.test(new URLSearchParams(location.search).get('template')||''))return showReader('docx-workspace');
  await showHome();
 }
 boot();
