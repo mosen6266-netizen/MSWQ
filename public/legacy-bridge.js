@@ -50,14 +50,19 @@ async function req(path,options={}){
  return j;
 }
 function files(){
- const group=get('groupScriptManager.v6')?.scripts||[],personal=get('personalFlowWorkspace.v1')?.flows||[];
- return [...personal.map(v=>({kind:'personal',data:v})),...group.map(v=>({kind:'group',data:v}))];
+ // The current in-memory list is authoritative: HTML imports are visible in
+ // the editor immediately, even before localStorage saves or if quota is full.
+ let group;
+ try{group=typeof window.mswqGetLiveGroupScripts==='function'?window.mswqGetLiveGroupScripts():null}catch(error){console.warn('群剧本实时列表读取失败',error)}
+ if(!Array.isArray(group))group=get('groupScriptManager.v6')?.scripts||[];
+ const personal=get('personalFlowWorkspace.v1')?.flows||[];
+ return [...personal.map(v=>({kind:'personal',data:v})),...group.filter(v=>v&&v.id).map(v=>({kind:'group',data:v}))];
 }
 function close(){modal.style.display='none';modal.innerHTML='';}
 function show(){
  const all=files();
  modal.style.display='flex';
- modal.innerHTML='<div style="width:min(620px,94vw);max-height:88vh;overflow:auto;border:1px solid #595e5a;border-radius:17px;background:#222425;color:#f6f6f5;padding:22px;box-shadow:0 30px 80px #000c"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong style="font-size:18px">同步到 MSWQ 在线前台</strong><button id="mswqClose" style="border:1px solid #555;background:#333;color:white;border-radius:8px;padding:5px 10px">关闭</button></div><p style="color:#adb3b1;font-size:12px;line-height:1.7">选择要发布的流程，系统直接上传与本编辑器「导出纯查看版 HTML」一致的原版页面。不会改用 MSWQ 的其它阅读样式。已经发布过的旧流程也可在这里重新发布一次，公开链接不变。</p><select id="mswqBridgeChoose" style="width:100%;background:#191b1c;color:#fff;border:1px solid #515351;border-radius:9px;padding:12px;margin:10px 0 18px">'+(all.length?all.map((x,i)=>'<option value="'+i+'">'+typeLabels[x.kind]+' · '+esc(x.data.name||'未命名')+'</option>').join(''):'<option>没有找到编辑器数据</option>')+'</select><div style="display:flex;gap:9px;flex-wrap:wrap"><button id="mswqDraft" '+(all.length?'':'disabled')+' style="border:1px solid #797a7c;background:#383a3b;border-radius:10px;color:#fff;padding:10px 15px;cursor:pointer">保存到后台草稿</button><button id="mswqPublish" '+(all.length?'':'disabled')+' style="border:1px solid #56c991;background:#176b48;border-radius:10px;color:#fff;font-weight:bold;padding:10px 15px;cursor:pointer">立即发布到前台</button></div><div id="mswqBridgeMsg" style="white-space:pre-wrap;color:#acd9bd;font-size:12px;margin-top:15px;overflow-wrap:anywhere"></div></div>';
+ modal.innerHTML='<div style="width:min(620px,94vw);max-height:88vh;overflow:auto;border:1px solid #595e5a;border-radius:17px;background:#222425;color:#f6f6f5;padding:22px;box-shadow:0 30px 80px #000c"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong style="font-size:18px">同步到 MSWQ 在线前台</strong><button id="mswqClose" style="border:1px solid #555;background:#333;color:white;border-radius:8px;padding:5px 10px">关闭</button></div><p style="color:#adb3b1;font-size:12px;line-height:1.7">选择要发布的流程，系统直接上传与本编辑器「导出纯查看版 HTML」一致的原版页面。不会改用 MSWQ 的其它阅读样式。已经发布过的旧流程也可在这里重新发布一次，公开链接不变。</p><select id="mswqBridgeChoose" style="width:100%;background:#191b1c;color:#fff;border:1px solid #515351;border-radius:9px;padding:12px;margin:10px 0 18px">'+(all.length?all.map((x,i)=>'<option value="'+i+'">'+typeLabels[x.kind]+' · '+esc(x.data.name||'未命名')+(x.kind==='group'&&x.data.mswqImportedFromHtml?'（HTML 导入）':'')+'</option>').join(''):'<option>没有找到编辑器数据</option>')+'</select><div style="display:flex;gap:9px;flex-wrap:wrap"><button id="mswqDraft" '+(all.length?'':'disabled')+' style="border:1px solid #797a7c;background:#383a3b;border-radius:10px;color:#fff;padding:10px 15px;cursor:pointer">保存到后台草稿</button><button id="mswqPublish" '+(all.length?'':'disabled')+' style="border:1px solid #56c991;background:#176b48;border-radius:10px;color:#fff;font-weight:bold;padding:10px 15px;cursor:pointer">立即发布到前台</button></div><div id="mswqBridgeMsg" style="white-space:pre-wrap;color:#acd9bd;font-size:12px;margin-top:15px;overflow-wrap:anywhere"></div></div>';
  $('#mswqClose').onclick=close;
  if(!all.length)return;
  $('#mswqDraft').onclick=()=>sync(all,false);
@@ -120,6 +125,10 @@ async function sync(all,publish){
 }
 async function syncOne(selected,publish,notify=report){
  if(!selected)return {ok:false,error:'流程不存在'};
+ // Flush the group editor's debounced save, but keep the live imported flow
+ // publishable if embedded media makes the localStorage quota too small.
+ const groupLocalUnsaved=selected.kind==='group'&&typeof window.mswqSaveGroupScriptsNow==='function'
+  ?window.mswqSaveGroupScriptsNow()===false:false;
  // The personal editor debounces local changes; flush immediately before reading.
  if(selected.kind==='personal'&&typeof window.mswqSavePersonalFlowNow==='function'){
   if(window.mswqSavePersonalFlowNow()===false){
@@ -192,7 +201,7 @@ async function syncOne(selected,publish,notify=report){
   remembered[mapKey]={id:saved.id,slug:saved.slug};
   localStorage.setItem(KEY,JSON.stringify(remembered));
   const publicUrl=location.origin+'/view/'+encodeURIComponent(saved.slug);
-  notify((publish?'原版 HTML 已成功发布':'原版 HTML 已保存为草稿')+'：'+saved.title+(warnings.length?'\\n⚠ '+warnings.length+' 个附件未同步，请在 MSWQ 素材库补充':'')+'\\n访问地址：'+publicUrl);
+  notify((publish?'原版 HTML 已成功发布':'原版 HTML 已保存为草稿')+'：'+saved.title+(warnings.length?'\\n⚠ '+warnings.length+' 个附件未同步，请在 MSWQ 素材库补充':'')+(groupLocalUnsaved?'\\n⚠ 本机存储空间不足，请另行导出编辑备份，避免关闭页面后丢失本地修改':'')+'\\n访问地址：'+publicUrl);
   if(notify===report){
    const target=$('#mswqBridgeMsg');
    if(target){
