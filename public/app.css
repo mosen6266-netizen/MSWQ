@@ -107,3 +107,14 @@ body:has(.public-docx-workspace){height:100vh;height:100dvh;overflow:hidden}
  .profile-public-fields{padding:12px 20px 22px}
  .special-edit-row{padding:13px}
 }
+
+/* Brand every home card, regardless of content kind or user-provided thumbnail. */
+.tile-image{display:flex;align-items:center;justify-content:center;isolation:isolate;overflow:hidden;background:radial-gradient(ellipse at 78% 30%,#355344 0%,#29362f 44%,#222426 100%)}
+.tile-image::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse at 50% 35%,#ffffff10,transparent 65%)}
+.tile-image--custom::before{z-index:1;background:linear-gradient(0deg,#0b1310b8,#0b131085)}
+.tile-image img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.tile-brand{position:relative;z-index:2;display:flex;align-items:baseline;justify-content:center;font-size:clamp(25px,2.5vw,37px);font-weight:900;letter-spacing:.075em;line-height:1;color:#f4f4f2;text-shadow:0 3px 14px #0008;white-space:nowrap;user-select:none;pointer-events:none}
+.tile-brand em{font-style:normal;color:var(--green);text-shadow:0 2px 12px #0007}
+.grid.compact-view .tile-brand{font-size:clamp(23px,2.2vw,30px)}
+.grid.list-view .tile-brand{font-size:clamp(21px,2.4vw,35px)}
+@media(max-width:760px){.tile-brand{font-size:32px}}
