@@ -1,3 +1,10 @@
+## 返回首页按钮重新发布不再丢失（2026-11-19）
+
+- 原因：部分浏览器用缓存的旧编辑器发布无返回按钮的 HTML，服务器先前未校验，导致覆盖已修复的页面。
+- 现在 Worker 的 `PUT /api/admin/items/:id/export-html` 在存储到 R2 之前，使用与原 HTML 导出模板完全相同的 `mswqReaderAddBackLink` 补齐「← 返回首页」及原版 CSS；若导出文件已有按钮则原样保存。返回 `backButton:true` 供编辑器确认；验证失败拒绝发布。
+- 发布桥接仅在上传已确认 `backButton:true` 后允许改为已发布。旧版浏览器缓存即使上传不带按钮的 HTML，服务器也会补全再发布。
+- 线上「助理流程」「律师流程」「Tether专员流程」已原位补齐，内容及已有分享链接不变，真实浏览器核对了三页按钮均为一个且点击可以返回首页。
+
 ## 原版 HTML 与前端发布保持完全一致（2026-11-19）
 
 - 源头只保留一个渲染真相：`legacy/flow-editor.html` 的个人流程 `pReaderHtml(pPack([flow]))` 与群剧本 `mswqGroupReaderHtml(script)` 就是离线导出 HTML 的生成器。原版「导出纯查看版 HTML」和 MSWQ 发布桥接均调用相同函数，不再生成第二套阅读器。
