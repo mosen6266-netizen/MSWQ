@@ -134,7 +134,12 @@ async function syncOne(selected,publish,notify=report){
  const item=convert(data,kind),mapKey=kind+':'+data.id,remembered=mapped(),old=remembered[mapKey];
  const warnings=[];
  try{
-  notify('正在同步「'+item.title+'」的话术、步骤和图片附件…');
+  if(typeof window.mswqBuildExactExportHtml!=='function')throw new Error('原版 HTML 生成器尚未加载，请刷新编辑器后重试');
+  notify('正在生成与离线导出完全相同的 HTML 查看版…');
+  const exportedHtml=await window.mswqBuildExactExportHtml(kind,data);
+  const exportBytes=new Blob([exportedHtml],{type:'text/html;charset=utf-8'}).size;
+  if(exportBytes>35_000_000)throw new Error('原版 HTML 大于35MB，请精简附件后重新发布');
+  notify('HTML 已生成，正在同步素材与内容…');
   for(let i=0;i<item.content.blocks.length;i++){
    const b=item.content.blocks[i],sourceFiles=b._sourceFiles||[];
    delete b._sourceFiles;
@@ -149,7 +154,8 @@ async function syncOne(selected,publish,notify=report){
     }catch(err){warnings.push((file.name||'附件')+': '+err.message)}
    }
   }
-  if(publish)item.status='published';
+  // Keep content unlisted until the exact HTML has been saved successfully.
+  item.status='draft';
   let response;
   if(old?.id){
    try{
@@ -163,7 +169,19 @@ async function syncOne(selected,publish,notify=report){
    }
   }
   if(!response)response=await req('/api/admin/items',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(item)});
-  const saved=response.item;
+  let saved=response.item;
+  notify('正文已保存，正在发布原版 HTML 文件…');
+  const upload=await req('/api/admin/items/'+saved.id+'/export-html',{
+   method:'PUT',
+   headers:{'content-type':'text/html; charset=utf-8','x-mswq-item-version':String(saved.version)},
+   body:exportedHtml
+  });
+  if(!upload.stored)throw new Error('HTML 存储未确认成功，页面仍保留为草稿');
+  if(publish){
+   const published={...saved,status:'published'};
+   const result=await req('/api/admin/items/'+saved.id,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(published)});
+   saved=result.item;
+  }
   remembered[mapKey]={id:saved.id,slug:saved.slug};
   localStorage.setItem(KEY,JSON.stringify(remembered));
   const publicUrl=location.origin+'/view/'+encodeURIComponent(saved.slug);
