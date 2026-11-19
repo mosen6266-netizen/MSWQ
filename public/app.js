@@ -65,18 +65,20 @@ function homeRender(){
  const c=S.settings||{},types=['all',...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k)))];
  if(S.filter!=='all'&&!types.includes(S.filter))S.filter='all';
  const matching=text=>String(text||'').toLowerCase().includes(S.search.toLowerCase());
- const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
+ const items=S.items.filter(x=>(S.filter==='all'||(x.kind==='document'&&orderedCategoryIds(c).includes(x.category)?x.category:x.kind)===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
  const isBookmarkTab=S.filter==='bookmarks';
  const bookmarkRows=isBookmarkTab?S.bookmarkEntries.filter(x=>matching([x.title,x.note,x.url,x.collectionTitle].join(' '))):[];
  const busy=isBookmarkTab&&!S.bookmarksLoaded&&!S.bookmarksError;
- const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length:'…'):items.length;
- const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
+ const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length+items.filter(x=>x.kind==='document').length:'…'):items.length;
+ const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
  let content;
  if(isBookmarkTab){
   content=S.bookmarksError?'<div class="empty">网址收藏加载失败：'+esc(S.bookmarksError)+' <button class="btn sm" data-action="retry-bookmarks">重试</button></div>':
    busy?'<div class="loading center">正在加载收藏网址…</div>':
-   bookmarkRows.length?'<section class="bookmark-public-grid home-bookmark-grid">'+bookmarkRows.map(bookmarkCard).join('')+'</section>':
-   '<div class="empty">'+(S.search?'没有匹配的收藏网址':'尚未发布收藏网址，请在后台「网址收藏」里添加并发布')+'</div>';
+   (bookmarkRows.length||items.some(x=>x.kind==='document'))?
+    (bookmarkRows.length?'<section class="bookmark-public-grid home-bookmark-grid">'+bookmarkRows.map(bookmarkCard).join('')+'</section>':'')+
+    (items.some(x=>x.kind==='document')?'<div class="grid bookmark-docx-grid">'+cards+'</div>':''):
+   '<div class="empty">'+(S.search?'没有匹配的收藏网址或文档':'尚未发布收藏网址或文档入口')+'</div>';
  }else{
   content=items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>';
  }
@@ -307,6 +309,16 @@ function docxSelectOptions(selected=''){
   '<option value="'+esc(t.id)+'" '+(selected===t.id?'selected':'')+'>'+esc(t.name||t.filename||'未命名模板')+'</option>'
  ).join('');
 }
+function docxDisplayCategoryOptions(selected=''){
+ const visible=orderedCategoryIds(S.settings).filter(id=>!(S.settings?.hidden_types||[]).includes(id));
+ const options=visible.map(id=>'<option value="'+esc(id)+'" '+(id===selected?'selected':'')+'>'+esc(typeNames[id]||id)+'</option>').join('');
+ const legacy=selected&&!visible.includes(selected)?'<option value="'+esc(selected)+'" selected>原有分类（已隐藏或删除），请更换</option>':'';
+ return '<option value="">请选择前台显示的分类…</option>'+legacy+options+'<option value="__new_category__">＋ 新建分类…</option>';
+}
+function defaultDocxCategory(){
+ const active=orderedCategoryIds(S.settings).filter(id=>!(S.settings?.hidden_types||[]).includes(id));
+ return active.includes('document')?'document':active[0]||'';
+}
 async function showQuickDocxCreate(){
  await loadDocxTemplates(true);
  const templateSelect=S.docxTemplates.length?
@@ -316,6 +328,8 @@ async function showQuickDocxCreate(){
   '<p class="muted small">直接从现有模板库选择，不需要填写模板 ID、公开路径或工作台地址。</p>'+
   '<div class="field"><label for="quickDocxTitle">前台显示名称</label><input id="quickDocxTitle" maxlength="160" placeholder="例如：制作文件" autocomplete="off"></div>'+
   '<div class="field"><label for="quickDocxTemplate">选择要直达的 DOCX 模板</label>'+templateSelect+'</div>'+
+  '<div class="field"><label for="quickDocxCategory">前台显示在哪个分类</label><select id="quickDocxCategory">'+docxDisplayCategoryOptions(defaultDocxCategory())+'</select><div class="muted small">会显示在选定的前台标签页和「全部内容」中。</div></div>'+
+  '<div class="field" id="quickDocxNewCategoryBox" style="display:none"><label for="quickDocxNewCategoryName">新分类名称</label><input id="quickDocxNewCategoryName" maxlength="30" placeholder="例如：制作文件"></div>'+
   '<div class="flex end" style="margin-top:20px"><button class="btn" data-action="close-modal">取消</button>'+
   (S.docxTemplates.length?'<button class="btn green" data-action="publish-docx-quick">保存并发布</button>':
    '<button class="btn" data-action="close-modal">关闭</button>')+'</div>');
@@ -332,6 +346,7 @@ function documentEditorHtml(x){
  return row('DOCX 直达入口','只需修改前台名称、选择模板，访问地址由系统自动管理。'+(x.status==='published'?' 当前已发布。':' 当前为草稿。'),
   field('前台显示名称',x.title,'title','例如：制作文件')+
   '<div class="field"><label for="docxEditorTemplate">对应 DOCX 模板</label>'+templateSelect+'</div>'+
+  '<div class="field"><label for="docxEditorCategory">前台显示分类</label><select id="docxEditorCategory" data-field="category">'+docxDisplayCategoryOptions(x.category||'document')+'</select></div>'+
   '<p class="muted small">点击这个入口将直接打开选定模板的填写与导出页面。</p>'+
   '<details class="special-meta-details"><summary>高级设置（通常不用修改）</summary><div class="special-meta-inside">'+
   field('公开路径',x.slug,'slug','系统自动生成')+
