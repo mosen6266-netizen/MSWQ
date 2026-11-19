@@ -49,7 +49,10 @@ function homeRender(){
  root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
 function anchorButton(label,url){
- return urlOk(url)?'<a class="action-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label||'打开链接')+' ↗</a>':'';
+ if(!urlOk(url))return '';
+ const href=new URL(url,location.origin).href;
+ return '<span class="reader-link-actions"><a class="action-link" href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(label||'打开链接')+' ↗</a>'+
+  '<button type="button" class="btn sm" data-action="copy-link-url" data-url="'+esc(href)+'">复制链接</button></span>';
 }
 function memberHtml(b,item){
  const members=item.content?.members||[];
@@ -71,7 +74,7 @@ function blockRender(b,index,item){
   const links=Array.isArray(b.links)&&b.links.length?b.links:[{url:b.url,label:b.text||title}];
   body='<div class="block-text">'+esc(b.text||'')+'</div>'+links.map(l=>anchorButton(l.label||l.zh||l.en||'打开链接',l.url)).join('');
  }else if(type==='image'){
-  body=b.assetId?'<img style="width:auto;max-width:100%;max-height:500px;border-radius:10px" loading="lazy" src="'+asset(b.assetId)+'" alt="'+esc(title)+'">':'<div class="muted">未设置图片</div>';
+  body=b.assetId?'<div class="reader-image-block">'+mediaTrigger('image',b.assetId,title)+'</div>':'<div class="muted">未设置图片</div>';
   if(b.text)body+='<p class="block-text">'+esc(b.text)+'</p>';
  }else if(type==='file'||type==='attachment'){
   const files=(b.files||[]).length?b.files:(b.assetId?[{id:b.assetId,name:b.title||'下载文件'}]:[]);
@@ -213,7 +216,7 @@ function sideNav(){
 }
 function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
- const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'删除不再使用的分类，或隐藏前台分类按钮而不删除内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接及图片',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
+ const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'删除不再使用的分类，或隐藏前台分类按钮而不删除内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
  const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
  // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
