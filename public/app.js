@@ -575,7 +575,7 @@ case 'retry-bookmarks':{
    const created=await api('/api/admin/items',{method:'POST',...jsonBody(item)});
    await loadAdmin();S.tab='library';adminRender();
    const fullUrl=location.origin+itemHref(created.item);
-   openModal('<h2>DOCX 入口已发布</h2><p>「'+esc(name)+'」已出现在前台的 DOCX 分类中，点击即可直达选中的模板。</p>'+
+   openModal('<h2>DOCX 入口已发布</h2><p>「'+esc(name)+'」已出现在前台「'+esc(typeNames[category]||'所选分类')+'」标签中，点击即可直达选中的模板。</p>'+
     '<div class="field"><label>自动生成的前台链接</label><input readonly value="'+esc(fullUrl)+'"></div>'+
     '<div class="flex end"><button class="btn" data-action="close-modal">关闭</button>'+
     '<button class="btn primary" data-action="copy-link-url" data-url="'+esc(fullUrl)+'">复制链接</button>'+
