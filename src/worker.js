@@ -161,6 +161,9 @@ function publicDocxPage(value){
 }
 async function handler(req,env){
  const url=new URL(req.url),p=url.pathname,method=req.method;
+ // Compatibility for old template links mistakenly generated as /?template=<id>.
+ // Serve the selected DOCX template in place, without redirecting to another page.
+ if(method==='GET'&&p==='/'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return publicDocxPage(ASSETS.docx);
  // Serve published DOCX tools as a standalone full-viewport app.
  // Resolve this on the server: the route must work even when an older app.js is browser-cached.
  if(method==='GET'&&p.startsWith('/view/')){
@@ -203,7 +206,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.4',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.5',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
