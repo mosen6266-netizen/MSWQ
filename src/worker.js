@@ -172,8 +172,8 @@ const PERSONAL_SWITCH_STYLE = [
  '#flowTabs.mswq-personal-hide-local{display:none!important}',
  '@media(max-width:650px){#mswqPersonalSwitch .mswq-personal-link{max-width:185px;font-size:12px;padding:9px 11px}}'
 ].join('');
-function decoratePersonalFlowResponse(response){
- return new HTMLRewriter()
+function decoratePersonalFlowResponse(response,fast=false){
+ const rewriter=new HTMLRewriter()
   .on('head',{element(element){
    element.append('<style id="mswq-personal-switch-style">'+PERSONAL_SWITCH_STYLE+'</style>',{html:true});
   }})
@@ -182,8 +182,16 @@ function decoratePersonalFlowResponse(response){
   }})
   .on('body',{element(element){
    element.append('<script src="/assets/personal-switch.js" defer></script>',{html:true});
-  }})
-  .transform(response);
+  }});
+ // The legacy export includes a full, duplicated offline rendering of the
+ // whole flow, then rebuilds it from the embedded pkg JSON on load. On quick
+ // switching only, avoid downloading/parsing that duplicate several-MB HTML.
+ // The original R2 bytes remain intact, and the normal URL keeps the offline
+ // fallback for browsers without JavaScript.
+ if(fast)rewriter.on('#flow',{element(element){
+  element.setInnerContent('<div class="muted" style="padding:24px;text-align:center">正在打开个人流程…</div>',{html:true});
+ }});
+ return rewriter.transform(response);
 }
 function frontTabForItem(item){return ['document','html'].includes(item.kind)?(item.category||(item.kind==='html'?'page':'document')):item.kind;}
 function htmlAssetLink(id){return /^[a-f0-9-]{36}$/i.test(String(id||''))?HTML_VIEW_ORIGIN+'/html/'+id+'/':'';}
@@ -335,7 +343,7 @@ async function handler(req,env){
  // Legacy flows use the exact exported HTML instead of being redrawn by the generic reader.
  if(method==='GET'&&p.startsWith('/view/')){
   const slug=decodeURIComponent(p.slice('/view/'.length));
-  const item=await env.DB.prepare("SELECT id,kind,status,title,content FROM items WHERE slug=? AND status='published'").bind(slug).first();
+  const item=await env.DB.prepare("SELECT id,kind,status,title,content,version FROM items WHERE slug=? AND status='published'").bind(slug).first();
   if(item?.kind==='html'){
    const direct=htmlAssetLink(JSON.parse(item.content||'{}').htmlAssetId);
    return direct?Response.redirect(direct,302):fail('HTML 页面缺少有效文件',404);
@@ -345,15 +353,25 @@ async function handler(req,env){
    if(exact){
     const signature=base64url(await digest(item.title+'\0'+item.content));
     if(exact.customMetadata?.signature===signature&&exact.customMetadata?.kind===item.kind){
+     const fast=item.kind==='personal'&&url.searchParams.get('fast')==='1';
+     // Only signed/versioned navigation URLs are cacheable. An updated item
+     // receives a new versioned URL, so buttons immediately show new content.
+     const stableVersion=fast&&url.searchParams.get('v')===String(item.version);
+     const cachePolicy=stableVersion?'private, max-age=600':'no-store';
+     const etag='"mswq-'+item.id+'-'+String(exact.etag||'')+'-'+String(item.version)+'-'+(fast?'fast':'full')+'"';
      const headers={
-      'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',
+      'content-type':'text/html; charset=utf-8','cache-control':cachePolicy,
+      'etag':etag,'x-content-type-options':'nosniff',
       'referrer-policy':'strict-origin-when-cross-origin',
       'content-security-policy':item.kind==='personal'
-       ?"default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+       ?"default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; prefetch-src 'self'; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
        :"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
      };
+     if(item.kind==='personal'&&req.headers.get('if-none-match')?.split(',').map(x=>x.trim()).includes(etag)){
+      return new Response(null,{status:304,headers});
+     }
      const originalResponse=new Response(exact.body,{status:200,headers});
-     return item.kind==='personal'?decoratePersonalFlowResponse(originalResponse):originalResponse;
+     return item.kind==='personal'?decoratePersonalFlowResponse(originalResponse,fast):originalResponse;
     }
    }
   }
@@ -379,7 +397,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.1',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.2',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
