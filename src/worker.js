@@ -5,6 +5,7 @@ const ASSETS = __MSWQ_ASSETS__;
 const DOCX_ADMIN_BACKEND = __MSWQ_DOCX_API__;
 // Temporary development mode. Set to false when MSWQ needs authentication.
 const MSWQ_TEST_OPEN_ADMIN = true;
+const HTML_VIEW_ORIGIN = 'https://mswq-html.mosen6266-ms007.workers.dev';
 const encoder = new TextEncoder();
 const enc = value => encoder.encode(value);
 const CORS_SAME_ORIGIN_ONLY = true;
@@ -75,7 +76,7 @@ function makeSlug(s){
 }
 function allowedUrl(raw){try{const url=new URL(raw);return ['http:','https:'].includes(url.protocol)}catch{return false;}}
 function normalizeItem(incoming,id){
- const kind=['personal','group','document','page','link','bookmarks','profile'].includes(incoming.kind)||/^custom_[a-f0-9]{32}$/.test(incoming.kind||'')?incoming.kind:'page';
+ const kind=['personal','group','document','page','link','bookmarks','profile','html'].includes(incoming.kind)||/^custom_[a-f0-9]{32}$/.test(incoming.kind||'')?incoming.kind:'page';
  const status=incoming.status==='published'?'published':'draft';
  const content=incoming.content&&typeof incoming.content==='object'?incoming.content:{blocks:[]};
  const blocks=Array.isArray(content.blocks)?content.blocks.slice(0,600):[];
@@ -159,19 +160,22 @@ function mswqReaderAddBackLink(html){
  else throw Error('原版 HTML 顶部导航结构不受支持');
  return output;
 }
-function frontTabForItem(item){return item.kind==='document'?(item.category||'document'):item.kind;}
+function frontTabForItem(item){return ['document','html'].includes(item.kind)?(item.category||(item.kind==='html'?'page':'document')):item.kind;}
+function htmlAssetLink(id){return /^[a-f0-9-]{36}$/i.test(String(id||''))?HTML_VIEW_ORIGIN+'/html/'+id+'/':'';}
+async function verifyHtmlItem(env,item){
+ if(item.kind!=='html')return '';
+ const id=JSON.parse(item.content||'{}').htmlAssetId;
+ if(!htmlAssetLink(id))return '请选择已上传的 HTML 文件';
+ const row=await env.DB.prepare('SELECT mime FROM assets WHERE id=?').bind(id).first();
+ return row?.mime==='text/html'?'':'关联的 HTML 文件不存在，请重新选择';
+}
 function record(r,includeContent=true){
  if(!r)return null;
  const z={id:r.id,kind:r.kind,status:r.status,title:r.title,slug:r.slug,description:r.description,category:r.category,tags:JSON.parse(r.tags||'[]'),sort_order:r.sort_order,thumbnail:r.thumbnail,created_at:r.created_at,updated_at:r.updated_at,version:r.version};
- if(includeContent)z.content=JSON.parse(r.content||'{}');
- else {
-  // Only expose a validated standalone link; never expose arbitrary private
-  // content to public card listings. The entire card can open it in a new tab.
-  try{
-   const data=JSON.parse(r.content||'{}');
-   if(data.openStandalone===true&&typeof data.standaloneUrl==='string'&&allowedUrl(data.standaloneUrl))z.direct_url=data.standaloneUrl;
-  }catch{}
- }
+ const data=JSON.parse(r.content||'{}');
+ if(includeContent)z.content=data;
+ if(r.kind==='html')z.direct_url=htmlAssetLink(data.htmlAssetId);
+ else if(!includeContent&&data.openStandalone===true&&typeof data.standaloneUrl==='string'&&allowedUrl(data.standaloneUrl))z.direct_url=data.standaloneUrl;
  return z;
 }
 async function config(env){
@@ -307,6 +311,10 @@ async function handler(req,env){
  if(method==='GET'&&p.startsWith('/view/')){
   const slug=decodeURIComponent(p.slice('/view/'.length));
   const item=await env.DB.prepare("SELECT id,kind,status,title,content FROM items WHERE slug=? AND status='published'").bind(slug).first();
+  if(item?.kind==='html'){
+   const direct=htmlAssetLink(JSON.parse(item.content||'{}').htmlAssetId);
+   return direct?Response.redirect(direct,302):fail('HTML 页面缺少有效文件',404);
+  }
   if(item&&['personal','group'].includes(item.kind)){
    const exact=await env.FILES.get('published-readers/'+item.id+'.html');
    if(exact){
@@ -341,7 +349,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.4.0',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.0',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -497,11 +505,12 @@ async function handler(req,env){
   const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
   const item=normalizeItem(body);
   const availability=await config(env);
-  if(item.kind==='document'){
-   const displayCategory=item.category||'document';
+  if(['document','html'].includes(item.kind)){
+   const displayCategory=item.category||(item.kind==='html'?'page':'document');
    if(!allTypeIds(availability).includes(displayCategory)||availability.deleted_types.includes(displayCategory))return fail('所选前台分类不存在或已删除，请重新选择',409);
    if(availability.hidden_types.includes(displayCategory))return fail('所选前台分类已隐藏，请先显示或更换分类',409);
   }else if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||availability.deleted_types.includes(item.kind))return fail('分类已删除，请恢复后再创建',409);
+  const htmlError=await verifyHtmlItem(env,item);if(htmlError)return fail(htmlError,400);
   try{return out({ok:true,item:await saveItem(env,item)},201)}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请更换 slug',409);throw e;}
  }
  const exactMatch=p.match(new RegExp('^/api/admin/items/([a-f0-9-]{32,40})/export-html$'));
@@ -552,11 +561,12 @@ async function handler(req,env){
    const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
    const item=normalizeItem(body,id);
    const availability=await config(env);
-    if(item.kind==='document'){
-     const displayCategory=item.category||'document';
+    if(['document','html'].includes(item.kind)){
+     const displayCategory=item.category||(item.kind==='html'?'page':'document');
      if(!allTypeIds(availability).includes(displayCategory)||availability.deleted_types.includes(displayCategory))return fail('所选前台分类不存在或已删除，请重新选择',409);
      if(availability.hidden_types.includes(displayCategory))return fail('所选前台分类已隐藏，请先显示或更换分类',409);
     }else if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||(availability.deleted_types.includes(item.kind)&&old.kind!==item.kind))return fail('分类已删除，请先恢复',409);
+    const htmlError=await verifyHtmlItem(env,item);if(htmlError)return fail(htmlError,400);
    try{return out({ok:true,item:await saveItem(env,item,old)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
   }
   if(method==='DELETE'){
@@ -600,14 +610,19 @@ async function handler(req,env){
  if(method==='POST'&&p==='/api/admin/assets'){
   const name=cleanString(decodeURIComponent(req.headers.get('x-file-name')||'file'),200);
   const mime=cleanString(req.headers.get('content-type')||'application/octet-stream',100);
-  const allowed=['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.openxmlformats-officedocument.presentationml.presentation','text/plain','application/zip'];
+  const allowed=['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.openxmlformats-officedocument.presentationml.presentation','text/plain','application/zip','text/html'];
   if(!allowed.includes(mime))return fail('不支持的文件类型。支持图片、MP4/WebM 视频及常用文档');
-  const sizeLimit=videoMime(mime)?50000000:12000000;
+  if(mime==='text/html'&&!/\.html?$/i.test(name))return fail('HTML 文件后缀必须是 .html 或 .htm');
+  const sizeLimit=videoMime(mime)?50000000:mime==='text/html'?35000000:12000000;
   const stated=Number(req.headers.get('content-length')||0);
-  if(stated>sizeLimit)return fail(videoMime(mime)?'视频不能超过 50MB':'单个文件不能超过 12MB',413);
+  if(stated>sizeLimit)return fail(mime==='text/html'?'HTML 不能超过 35MB':videoMime(mime)?'视频不能超过 50MB':'单个文件不能超过 12MB',413);
   const bytes=await req.arrayBuffer();
-  if(bytes.byteLength>sizeLimit)return fail(videoMime(mime)?'视频不能超过 50MB':'单个文件不能超过 12MB',413);
+  if(bytes.byteLength>sizeLimit)return fail(mime==='text/html'?'HTML 不能超过 35MB':videoMime(mime)?'视频不能超过 50MB':'单个文件不能超过 12MB',413);
   if(!bytes.byteLength)return fail('空文件不能上传');
+  if(mime==='text/html'){
+   const start=new TextDecoder().decode(bytes.slice(0,8192)),end=new TextDecoder().decode(bytes.slice(-8192));
+   if(!/<html[\s>]/i.test(start)||!/<\/html\s*>/i.test(end))return fail('请选择包含完整 HTML 页面结构的文件',400);
+  }
   const id=crypto.randomUUID();
   await env.FILES.put(id,bytes,{httpMetadata:{contentType:mime}});
   try{await env.DB.prepare('INSERT INTO assets(id,name,mime,size,key,created_at) VALUES(?,?,?,?,?,?)').bind(id,name,mime,bytes.byteLength,id,iso()).run()}
