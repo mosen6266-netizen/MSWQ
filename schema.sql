@@ -1,7 +1,7 @@
 -- Isolated MSWQ schema. Do not apply to other D1 databases.
 CREATE TABLE IF NOT EXISTS items (
  id TEXT PRIMARY KEY,
- kind TEXT NOT NULL CHECK(kind IN ('personal','group','document','page','link')),
+ kind TEXT NOT NULL, -- API validation allows built-in kinds plus custom_<32-hex> categories,
  status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published')),
  title TEXT NOT NULL,
  slug TEXT NOT NULL UNIQUE,
