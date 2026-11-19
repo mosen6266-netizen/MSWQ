@@ -42,7 +42,8 @@ async function showHome(){
  catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
 }
 function homeRender(){
- const c=S.settings||{},types=['all',...Object.keys(typeNames)];
+ const c=S.settings||{},types=['all',...Object.keys(typeNames).filter(k=>!((c.hidden_types||[]).includes(k)))];
+ if(S.filter!=='all'&&!types.includes(S.filter))S.filter='all';
  const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&[x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ').toLowerCase().includes(S.search.toLowerCase()));
  const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
  root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
@@ -164,7 +165,7 @@ async function openAdmin(){
   S.admin=true;
   await loadAdmin();
   const initialTab=new URLSearchParams(location.search).get('tab');
-  if(['dashboard','library','bookmarks','profile','assets','settings','import','legacy','legacy-docx'].includes(initialTab))S.tab=initialTab;
+  if(['dashboard','library','categories','bookmarks','profile','assets','settings','import','legacy','legacy-docx'].includes(initialTab))S.tab=initialTab;
   if(initialTab==='assets')await loadAssets();
   adminRender();
  }catch(err){
@@ -177,12 +178,12 @@ async function loadAdmin(){
  S.items=data.items;S.settings=settings.settings;applyCustomTypes(S.settings);
 }
 function sideNav(){
- const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['bookmarks','▣','网址收藏'],['profile','◈','个人名片'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
+ const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['categories','☷','分类管理'],['bookmarks','▣','网址收藏'],['profile','◈','个人名片'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
  return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&S.returnTab===x[0]?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>测试模式 · 免密码进入</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a></div></div></aside>';
 }
 function adminRender(){
- const heading={dashboard:'后台总览',library:'内容管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
- const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接及图片',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
+ const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
+ const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'删除不再使用的分类，或隐藏前台分类按钮而不删除内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接及图片',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
  const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
  // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
@@ -212,6 +213,7 @@ function adminPanel(){
  if(S.tab==='editor')return editorHtml();
  if(S.tab==='assets')return assetsHtml();
  if(S.tab==='settings')return settingsHtml();
+ if(S.tab==='categories')return categoryManagerHtml();
  if(S.tab==='import')return importHtml();
 
 
@@ -328,10 +330,28 @@ function assetsHtml(){
 function assetCard(a,picker=false){
  return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
 }
+function categoryManagerHtml(){
+ const hidden=new Set(S.settings?.hidden_types||[]);
+ const custom=S.settings?.custom_types||[];
+ const kinds=[...Object.entries(builtinTypes),...custom.map(x=>[x.id,x.name])];
+ const rows=kinds.map(([id,label])=>{
+  const isCustom=id.startsWith('custom_'),count=S.items.filter(x=>x.kind===id).length,off=hidden.has(id);
+  return '<div class="category-manage-row"><div class="category-manage-label"><strong>'+esc(label)+'</strong><div class="muted small">'+
+   (isCustom?'自定义分类 · ':'系统分类 · ')+count+' 个内容 · '+(off?'前台筛选栏已隐藏':'在前台筛选栏显示')+
+   '</div></div><div class="category-manage-actions">'+
+    '<button class="btn sm '+(off?'green':'')+'" data-action="toggle-category-visibility" data-id="'+esc(id)+'" data-hidden="'+(off?'0':'1')+'">'+(off?'恢复显示':'隐藏前台')+'</button>'+
+    (isCustom?'<button class="btn sm danger" data-action="delete-category" data-id="'+esc(id)+'" '+(count?'disabled title="请先将该分类的内容改为其他类型"':'')+'>删除分类</button>':'<span class="muted tiny category-system-hint">系统分类只能隐藏</span>')+
+   '</div></div>';
+ }).join('');
+ return row('前台分类管理','管理首页筛选栏中「全部内容」后面的分类按钮；隐藏不会删除内容，删除空的自定义分类才会从菜单中移除。',
+  '<div class="notice">系统自带分类不可永久删除，但可以隐藏。自定义分类若还有内容，请先进入「内容管理」转换对应内容类型，或直接选择隐藏。</div>'+
+  '<div class="category-manager-list">'+rows+'</div><p class="muted small">「全部内容」始终保留。隐藏分类后，该分类的已发布内容仍会显示在「全部内容」里。</p>');
+}
+
 function settingsHtml(){
  const s=S.settings||{};
  return row('首页文案与展示','只影响本站的公开首页，不会覆盖任何旧系统',
-  field('网站名称',s.brand,'brand')+field('首页大标题',s.headline,'headline')+field('首页说明',s.description,'description','','textarea')+field('公告（可留空）',s.announcement,'announcement','','textarea')+field('页脚版权文字',s.footer,'footer')+'<div class="field"><label>公开首页布局</label><select data-field="layout"><option value="grid" '+(s.layout==='grid'?'selected':'')+'>标准卡片</option><option value="compact" '+(s.layout==='compact'?'selected':'')+'>紧凑四列</option><option value="list" '+(s.layout==='list'?'selected':'')+'>横向列表</option></select></div>'+field('DOCX 公开工作台路径',s.docx_url,'docx_url')+'<div class="notice">MSWQ 的 DOCX 公开页面已去除管理员按钮，并通过只读接口加载原模板。模板增删、原文编辑仍需在原有文档后台操作，后续可完整迁移到 MSWQ。</div><button class="btn green" data-action="save-settings">保存网站设置</button>');
+  field('网站名称',s.brand,'brand')+field('首页大标题',s.headline,'headline')+field('首页说明',s.description,'description','','textarea')+field('公告（可留空）',s.announcement,'announcement','','textarea')+field('页脚版权文字',s.footer,'footer')+'<div class="field"><label>公开首页布局</label><select data-field="layout"><option value="grid" '+(s.layout==='grid'?'selected':'')+'>标准卡片</option><option value="compact" '+(s.layout==='compact'?'selected':'')+'>紧凑四列</option><option value="list" '+(s.layout==='list'?'selected':'')+'>横向列表</option></select></div>'+field('DOCX 公开工作台路径',s.docx_url,'docx_url')+'<button class="btn" data-action="tab" data-id="categories">管理首页分类筛选栏 →</button><div class="notice">MSWQ 的 DOCX 公开页面已去除管理员按钮，并通过只读接口加载原模板。模板增删、原文编辑仍需在原有文档后台操作，后续可完整迁移到 MSWQ。</div><button class="btn green" data-action="save-settings">保存网站设置</button>');
 }
 function importHtml(){
  return row('导入旧版流程','从上传的原始编辑器导出「编辑备份 JSON」，再上传到这里',
@@ -404,6 +424,25 @@ async function perform(action,id,el){
  case 'copy-profile':{
   const f=S.viewer?.content?.fields?.find(f=>f.id===id);
   if(f){await navigator.clipboard.writeText(String(f.value||''));toast('内容已复制');}break;
+ }
+ case 'toggle-category-visibility':{
+  const hidden=el.dataset.hidden==='1',label=typeNames[id]||id;
+  const updated=await api('/api/admin/types/visibility',{method:'PUT',...jsonBody({id,hidden})});
+  S.settings.hidden_types=updated.hidden_types;
+  adminRender();toast(hidden?'已隐藏「'+label+'」的前台分类按钮':'已恢复「'+label+'」的分类按钮');
+  break;
+ }
+ case 'delete-category':{
+  const type=(S.settings?.custom_types||[]).find(x=>x.id===id);
+  if(!type)return toast('只能删除自定义分类');
+  const count=S.items.filter(x=>x.kind===id).length;
+  if(count)return toast('此分类还有 '+count+' 个内容，请先调整内容类型或隐藏分类');
+  if(!confirm('确定永久删除自定义分类「'+type.name+'」？此操作不会删除任何内容。'))break;
+  const updated=await api('/api/admin/types/'+encodeURIComponent(id),{method:'DELETE'});
+  S.settings.custom_types=updated.custom_types;
+  S.settings.hidden_types=updated.hidden_types;
+  applyCustomTypes(S.settings);adminRender();toast('分类「'+type.name+'」已删除');
+  break;
  }
  case 'create-custom-type':{
   const name=($('#customTypeName')?.value||'').trim();
