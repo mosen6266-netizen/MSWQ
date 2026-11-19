@@ -16,6 +16,12 @@ function html(value,isLegacy=false){
     : "default-src 'self' data: blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-src https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
   return new Response(value,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'strict-origin-when-cross-origin','content-security-policy':csp}});
 }
+// Only permit embedding standalone administrative tools in the same-origin MSWQ dashboard.
+function adminEmbeddedHtml(value){
+ const response=html(value,true),headers=new Headers(response.headers);
+ headers.set('content-security-policy',(headers.get('content-security-policy')||'').replace("frame-ancestors 'none'","frame-ancestors 'self'"));
+ return new Response(value,{status:200,headers});
+}
 function base64url(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function fromBase64url(s){return Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));}
 async function digest(s){return new Uint8Array(await crypto.subtle.digest('SHA-256',enc(s)));}
@@ -206,7 +212,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.5',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.6',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -236,8 +242,8 @@ async function handler(req,env){
   if(!MSWQ_TEST_OPEN_ADMIN && !await sessionValid(req,env))return fail('请先登录管理后台',401);
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(req))return fail('请求来源不合法',403);
  }
- if(method==='GET'&&p==='/admin/legacy-editor')return html(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'),true);
- if(method==='GET'&&p==='/admin/docx-editor')return html(ASSETS.docx.replace(/<style id="mswq-docx-public-only">[\s\S]*?<\/style>/,'').replaceAll('/api/docx/','/api/admin/docx/').replace(/\/api\/(login|logout|password|order)(?=[^a-zA-Z]|$)/g,'/api/admin/docx/$1'),true);
+ if(method==='GET'&&p==='/admin/legacy-editor')return adminEmbeddedHtml(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'));
+ if(method==='GET'&&p==='/admin/docx-editor')return adminEmbeddedHtml(ASSETS.docx.replace(/<style id="mswq-docx-public-only">[\s\S]*?<\/style>/,'').replaceAll('/api/docx/','/api/admin/docx/').replace(/\/api\/(login|logout|password|order)(?=[^a-zA-Z]|$)/g,'/api/admin/docx/$1'));
  if(p.startsWith('/api/admin/docx/')){
   const remotePath=p.replace('/api/admin/docx/','/api/');
   if(!/^\/api\/(?:templates(?:\/[a-f0-9-]{16,60})?|templates\/[a-f0-9-]{16,60}\/(?:docx|version)|login|logout|session|password|order)$/.test(remotePath))
