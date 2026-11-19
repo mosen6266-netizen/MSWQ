@@ -393,7 +393,8 @@ async function handler(req,env){
   const body=await parse(req,10000),id=String(body?.id||''),settings=await config(env);
   if(!allTypeIds(settings).includes(id)||!settings.deleted_types.includes(id))return fail('没有找到已删除分类',404);
   const deleted_types=settings.deleted_types.filter(x=>x!==id),hidden_types=settings.hidden_types.filter(x=>x!==id);
-  const type_order=[...settings.type_order.filter(x=>x!==id),id];
+  const active=allTypeIds(settings).filter(x=>!settings.deleted_types.includes(x)&&x!==id);
+  const type_order=[...new Set([...settings.type_order,...active])].filter(x=>active.includes(x)).concat(id);
   await env.DB.batch([
    env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('deleted_types',JSON.stringify(deleted_types)),
    env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('hidden_types',JSON.stringify(hidden_types)),
