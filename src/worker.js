@@ -66,7 +66,7 @@ function makeSlug(s){
 }
 function allowedUrl(raw){try{const url=new URL(raw);return ['http:','https:'].includes(url.protocol)}catch{return false;}}
 function normalizeItem(incoming,id){
- const kind=['personal','group','document','page','link'].includes(incoming.kind)?incoming.kind:'page';
+ const kind=['personal','group','document','page','link'].includes(incoming.kind)||/^custom_[a-f0-9]{32}$/.test(incoming.kind||'')?incoming.kind:'page';
  const status=incoming.status==='published'?'published':'draft';
  const content=incoming.content&&typeof incoming.content==='object'?incoming.content:{blocks:[]};
  const blocks=Array.isArray(content.blocks)?content.blocks.slice(0,600):[];
@@ -92,8 +92,15 @@ function record(r,includeContent=true){
 }
 async function config(env){
  const rows=await env.DB.prepare('SELECT key,value FROM settings').all();
- const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx'};
- for(const {key,value} of rows.results||[])out[key]=value;
+ const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[]};
+ for(const {key,value} of rows.results||[]){
+  if(key==='custom_types'){
+   try{
+    const parsed=JSON.parse(value);
+    if(Array.isArray(parsed))out.custom_types=parsed.filter(x=>x&&/^custom_[a-f0-9]{32}$/.test(x.id)&&typeof x.name==='string').slice(0,100);
+   }catch{}
+  }else out[key]=value;
+ }
  return out;
 }
 async function fetchPublic(env){
@@ -194,7 +201,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.9',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.1.0',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -250,6 +257,21 @@ async function handler(req,env){
 
  if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='POST'&&p==='/api/admin/logout')return out({ok:true,testMode:MSWQ_TEST_OPEN_ADMIN},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
+ if(method==='POST'&&p==='/api/admin/types'){
+  const body=await parse(req,10000);
+  const name=cleanString(body?.name,30);
+  if(!name||String(body?.name||'').trim().length>30)return fail('分类名称须为 1–30 个字符');
+  if(/[\u0000-\u001f\u007f<>]/.test(name))return fail('分类名称包含不支持的字符');
+  const settings=await config(env);
+  const categories=settings.custom_types;
+  const reserved=['个人流程','群剧本','DOCX 文档','自定义页面','外部工具'];
+  if([...reserved,...categories.map(x=>x.name)].some(x=>x.toLocaleLowerCase()===name.toLocaleLowerCase()))return fail('这个分类已经存在',409);
+  if(categories.length>=100)return fail('最多创建 100 个自定义分类',409);
+  const type={id:'custom_'+crypto.randomUUID().replace(/-/g,''),name};
+  categories.push(type);
+  await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('custom_types',JSON.stringify(categories)).run();
+  return out({ok:true,type,custom_types:categories},201);
+ }
  if(method==='GET'&&p==='/api/admin/items'){
   const rows=await env.DB.prepare('SELECT * FROM items ORDER BY sort_order ASC,updated_at DESC').all();
   return out({ok:true,items:(rows.results||[]).map(r=>record(r))});
@@ -257,6 +279,7 @@ async function handler(req,env){
  if(method==='POST'&&p==='/api/admin/items'){
   const body=await parse(req);
   const item=normalizeItem(body);
+  if(item.kind.startsWith('custom_')&&!(await config(env)).custom_types.some(t=>t.id===item.kind))return fail('自定义分类不存在，请刷新后台后再选择');
   try{return out({ok:true,item:await saveItem(env,item)},201)}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请更换 slug',409);throw e;}
  }
  const match=p.match(/^\/api\/admin\/items\/([a-f0-9-]{32,40})$/);
@@ -268,6 +291,7 @@ async function handler(req,env){
    const body=await parse(req);
    if(body.version!==old.version)return fail('版本已更新，请刷新后重试，避免覆盖其他修改',409);
    const item=normalizeItem(body,id);
+   if(item.kind.startsWith('custom_')&&!(await config(env)).custom_types.some(t=>t.id===item.kind))return fail('自定义分类不存在，请刷新后台后再选择');
    try{return out({ok:true,item:await saveItem(env,item,old)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
   }
   if(method==='DELETE'){
