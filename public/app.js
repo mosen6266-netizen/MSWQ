@@ -78,6 +78,41 @@ function blockRender(b,index,item){
  }else body='<div class="block-text">'+esc(b.text||b.content||'')+'</div>';
  return '<article class="block '+(type==='hint'||type==='note'?'hint':type==='wait'?'wait':'')+'" id="step-'+id+'">'+hdr+body+'</article>';
 }
+
+function bookmarksPublic(item,preview){
+ const entries=Array.isArray(item.content?.entries)?item.content.entries:[];
+ const cards=entries.filter(x=>x&&urlOk(x.url)).map(x=>{
+  const url=new URL(x.url,location.origin),domain=url.hostname.replace(/^www\./,'');
+  return '<a class="bookmark-public-card" href="'+esc(url.href)+'" target="_blank" rel="noopener noreferrer">'+
+   '<div class="bookmark-public-image">'+(x.assetId?'<img loading="lazy" src="'+asset(x.assetId)+'" alt="'+esc(x.title)+'">':'<span>↗</span>')+'</div>'+
+   '<div class="bookmark-public-info"><div class="bookmark-domain">'+esc(domain)+'</div><h2>'+esc(x.title||domain)+'</h2>'+
+   (x.note?'<p>'+esc(x.note)+'</p>':'')+'<span class="bookmark-open">打开网址 ↗</span></div></a>';
+ }).join('');
+ return publicHeader(true)+'<main class="collection-page"><div class="collection-heading"><span class="collection-kicker">SAVED LINKS</span><h1>'+esc(item.title)+'</h1>'+
+  (item.description?'<p>'+esc(item.description)+'</p>':'')+(preview?'<button class="btn sm" data-action="back-edit">← 返回编辑</button>':'')+
+  '</div>'+(cards?'<section class="bookmark-public-grid">'+cards+'</section>':'<div class="empty">这个收藏夹还没有可以打开的网址</div>')+'</main>';
+}
+function profilePublic(item,preview){
+ const fields=Array.isArray(item.content?.fields)?item.content.fields:[];
+ const rows=fields.filter(f=>f&&(f.label||f.value||f.assetId)).map(f=>{
+  const label=esc(f.label||'未命名项目');
+  if(f.type==='image'){
+   return '<section class="profile-public-field profile-image-field"><div class="profile-field-label">'+label+'</div>'+
+    (f.assetId?'<img src="'+asset(f.assetId)+'" loading="lazy" alt="'+label+'">':'')+
+    (f.value?'<div class="profile-field-value">'+esc(f.value)+'</div>':'')+'</section>';
+  }
+  if(f.type==='link'){
+   return '<section class="profile-public-field"><div class="profile-field-label">'+label+'</div>'+
+    (urlOk(f.value)?'<a href="'+esc(new URL(f.value,location.origin).href)+'" target="_blank" rel="noopener noreferrer" class="profile-field-link">'+esc(f.value)+' ↗</a>':'<div class="profile-field-value">'+esc(f.value||'')+'</div>')+'</section>';
+  }
+  return '<section class="profile-public-field"><div class="profile-field-label">'+label+'</div><div class="profile-field-value">'+esc(f.value||'')+'</div>'+
+   (f.value?'<button class="profile-copy" type="button" data-action="copy-profile" data-id="'+esc(f.id)+'">复制</button>':'')+'</section>';
+ }).join('');
+ return publicHeader(true)+'<main class="profile-public-page"><div class="profile-public-card"><div class="profile-hero"><span>PERSONAL CARD</span><h1>'+esc(item.title||'个人名片')+'</h1>'+
+  (item.description?'<p>'+esc(item.description)+'</p>':'')+(preview?'<button class="btn sm" data-action="back-edit">← 返回编辑</button>':'')+'</div>'+
+  '<div class="profile-public-fields">'+(rows||'<div class="empty">这张名片还没有添加展示内容</div>')+'</div></div></main>';
+}
+
 async function showReader(slugText,localItem=null){
  root.innerHTML='<div class="loading center" style="padding:100px">正在打开内容…</div>';
  try{
@@ -87,6 +122,8 @@ async function showReader(slugText,localItem=null){
  const content=item.content||{},blocks=content.blocks||[];
  const nav=blocks.map((b,i)=>'<button class="navlink '+(b.type==='hint'?'hint':'')+'" data-action="jump" data-id="'+esc(b.id||'b'+i)+'">'+(i+1)+'. '+esc(b.title||b.text||blockNames[b.type]||'内容')+'</button>').join('');
  let body='';
+ if(item.kind==='bookmarks'){root.innerHTML=bookmarksPublic(item,!!localItem);return;}
+ if(item.kind==='profile'){root.innerHTML=profilePublic(item,!!localItem);return;}
  if(item.kind==='document'){
   const baseDoc=content.docUrl||S.settings?.docx_url||'/docx';
   let docUrl;
