@@ -11,7 +11,13 @@ const builtinTypes={personal:'个人流程',group:'群剧本',document:'DOCX 文
 const typeNames={...builtinTypes};
 function applyCustomTypes(settings){
  for(const key of Object.keys(typeNames))if(!(key in builtinTypes))delete typeNames[key];
+ for(const [id,name] of Object.entries(settings?.type_labels||{}))if(Object.hasOwn(builtinTypes,id))typeNames[id]=name;
+ for(const id of Object.keys(builtinTypes))if(!(id in (settings?.type_labels||{})))typeNames[id]=builtinTypes[id];
  for(const t of settings?.custom_types||[])if(/^custom_[a-f0-9]{32}$/.test(t.id))typeNames[t.id]=t.name;
+}
+function orderedCategoryIds(settings){
+ const keys=Object.keys(typeNames).filter(id=>!(settings?.deleted_types||[]).includes(id));
+ return [...new Set([...(settings?.type_order||[]),...keys])].filter(id=>keys.includes(id));
 }
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
 const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library'};
@@ -42,7 +48,7 @@ async function showHome(){
  catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
 }
 function homeRender(){
- const c=S.settings||{},types=['all',...Object.keys(typeNames).filter(k=>!((c.hidden_types||[]).includes(k)))];
+ const c=S.settings||{},types=['all',...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k)))];
  if(S.filter!=='all'&&!types.includes(S.filter))S.filter='all';
  const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&[x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ').toLowerCase().includes(S.search.toLowerCase()));
  const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
@@ -216,7 +222,7 @@ function sideNav(){
 }
 function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
- const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'删除不再使用的分类，或隐藏前台分类按钮而不删除内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
+ const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'全部分类都能重命名、拖动排序、隐藏、删除和恢复，不影响原有内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
  const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
  // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
@@ -325,7 +331,8 @@ function editorHtml(){
  const x=S.edit;if(!x)return '<div class="empty">请先从列表中选择需要编辑的内容</div>';
  if(x.kind==='profile')return profileEditorHtml(x);
  const c=x.content||(x.content={blocks:[],members:[]});
- const select='<select data-field="kind">'+Object.keys(typeNames).map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+esc(t)+'">'+esc(typeNames[t])+'</option>').join('')+'<option disabled>──────────</option><option value="__create_type__">＋ 新增分类…</option></select>';
+ const availableTypes=orderedCategoryIds(S.settings);if(!availableTypes.includes(x.kind))availableTypes.push(x.kind);
+  const select='<select data-field="kind">'+availableTypes.map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+esc(t)+'">'+esc(typeNames[t]||'原分类')+((S.settings?.deleted_types||[]).includes(t)?'（已删除，保留原内容）':'')+'</option>').join('')+'<option disabled>──────────</option><option value="__create_type__">＋ 新增分类…</option></select>';
  let main='<div class="admin-panel" style="margin-top:0"><div class="panel-head"><h2>基本信息</h2><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></div><div class="two">'+field('标题',x.title,'title','例如：个人沟通流程')+'<div class="field"><label>内容类型</label>'+select+'</div></div>'+field('公开路径（slug）',x.slug,'slug','不填写时自动生成')+field('简介',x.description,'description','一句话介绍此内容','textarea')+'<div class="three">'+field('分类',x.category,'category','例如：客服')+field('标签（逗号分隔）',(x.tags||[]).join(', '),'tags','标签1, 标签2')+field('首页排序数字',x.sort_order,'sort_order','数字越小越靠前')+'</div>'+field('封面图片（可填写素材资源 URL）',x.thumbnail,'thumbnail','/api/asset/...')+'</div>';
  if(x.kind==='bookmarks'){
   const entries=c.entries||(c.entries=[]);
