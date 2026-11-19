@@ -137,6 +137,21 @@ function validateSpecialContent(incoming){
  }
  return '';
 }
+function mswqReaderAddBackLink(html){
+ const home='https://mswq.mosen6266-ms007.workers.dev/';
+ if(typeof html!=='string'||!html.toLowerCase().startsWith('<!doctype html>'))throw Error('原版 HTML 内容格式不正确');
+ if(html.includes('data-mswq-home="true"'))return html;
+ const css='\n.mswq-home-link{display:inline-flex;align-items:center;justify-content:center;width:max-content;max-width:100%;box-sizing:border-box;padding:8px 12px;margin:0 0 8px;color:#f1f1ef;background:#303234;border:1px solid #676a69;border-radius:9px;text-decoration:none;font-size:12px;font-weight:800;line-height:1.35;white-space:nowrap;cursor:pointer}.mswq-home-link:hover{color:#fff;border-color:#94b8a3;background:#3d4841}.mswq-home-link:focus-visible{outline:2px solid #71ce9c;outline-offset:3px}.top>.mswq-home-link{flex-shrink:0;margin:0 6px 0 0}\n';
+ const link='<a data-mswq-home="true" class="mswq-home-link" href="'+home+'" aria-label="返回 MSWQ 首页">← 返回首页</a>';
+ if(!html.includes('</style></head>'))throw Error('原版 HTML 缺少样式结束位置');
+ let output=html.replace('</style></head>',css+'</style></head>');
+ const personal='<div class="reader-header-main">';
+ const group='<div class="top">';
+ if(output.includes(personal))output=output.replace(personal,personal+link);
+ else if(output.includes(group))output=output.replace(group,group+link);
+ else throw Error('原版 HTML 顶部导航结构不受支持');
+ return output;
+}
 function frontTabForItem(item){return item.kind==='document'?(item.category||'document'):item.kind;}
 function record(r,includeContent=true){
  if(!r)return null;
@@ -488,9 +503,17 @@ async function handler(req,env){
   const head=new TextDecoder().decode(bytes.slice(0,250));
   const tail=new TextDecoder().decode(bytes.slice(-250));
   if(!head.trimStart().toLowerCase().startsWith('<!doctype html>')||!tail.trimEnd().toLowerCase().endsWith('</html>'))return fail('仅接受原编辑器生成的完整 HTML 文件',400);
+  // Enforce the same return-home button as the shared original HTML export,
+  // even if the publishing browser still has an older cached editor script.
+  const incomingHtml=new TextDecoder().decode(bytes);
+  let finalHtml;
+  try{finalHtml=mswqReaderAddBackLink(incomingHtml)}
+  catch(e){return fail('发布 HTML 缺少有效的导航结构，请刷新编辑器并重新发布：'+e.message,400)}
+  const finalBytes=enc(finalHtml);
+  if(finalBytes.byteLength>35_000_000)return fail('HTML 文件加上返回按钮后超过35MB',413);
   const signature=base64url(await digest(item.title+'\0'+item.content));
-  await env.FILES.put('published-readers/'+id+'.html',bytes,{httpMetadata:{contentType:'text/html; charset=utf-8'},customMetadata:{signature,kind:item.kind,version:String(item.version),source:'original-editor-export'}});
-  return out({ok:true,stored:true,bytes:bytes.byteLength,version:item.version});
+  await env.FILES.put('published-readers/'+id+'.html',finalBytes,{httpMetadata:{contentType:'text/html; charset=utf-8'},customMetadata:{signature,kind:item.kind,version:String(item.version),source:'original-editor-export'}});
+  return out({ok:true,stored:true,bytes:finalBytes.byteLength,backButton:true,autoRepaired:finalBytes.byteLength!==bytes.byteLength,version:item.version});
  }
  const match=p.match(/^\/api\/admin\/items\/([a-f0-9-]{32,40})$/);
  if(match){
