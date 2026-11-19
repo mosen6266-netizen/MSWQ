@@ -20,7 +20,7 @@ function orderedCategoryIds(settings){
  return [...new Set([...(settings?.type_order||[]),...keys])].filter(id=>keys.includes(id));
 }
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
-const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:''};
+const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null};
 let toastTimer;
 let draggedCategory='';
 function toast(t){const n=$('#toast');n.textContent=t;n.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.classList.remove('show'),2600)}
@@ -254,7 +254,7 @@ function sideNav(){
 function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
  const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'全部分类都能重命名、拖动排序、隐藏、删除和恢复，不影响原有内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
- const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
+ const action=S.tab==='library'?'<button class="btn green" data-action="open-docx-create">＋ 添加 DOCX 入口</button><button class="btn primary" data-action="new-item">＋ 新建其他内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
  // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
   const isDocx=S.tab==='legacy-docx';
@@ -269,7 +269,7 @@ function adminPanel(){
  if(S.tab==='dashboard'){
   const published=S.items.filter(x=>x.status==='published').length;
   const draft=S.items.length-published;
-  return '<div class="stats"><div class="stat"><span>全部内容</span><strong>'+S.items.length+'</strong></div><div class="stat"><span>已发布</span><strong>'+published+'</strong></div><div class="stat"><span>草稿</span><strong>'+draft+'</strong></div><div class="stat"><span>内容类型</span><strong>'+Object.keys(typeNames).length+'</strong></div></div>'+row('快捷管理','创建内容后可独立生成公开链接','<div class="flex" style="flex-wrap:wrap"><button class="btn primary" data-action="new-item">＋ 新建流程 / 页面</button><button class="btn" data-action="tab" data-id="import">导入旧编辑器备份</button><button class="btn" data-action="tab" data-id="assets">上传图片或文件</button><a class="btn" href="/" target="_blank">查看公开首页</a></div>')+row('使用顺序','', '<div class="stack muted">① 在内容管理中创建个人流程、群剧本或页面 → ② 添加步骤、按钮、附件 → ③ 保存草稿并预览 → ④ 发布并复制公开链接。<br>DOCX 模块可以创建文档入口，暂时沿用原有 MS_KHMB 服务，不会修改其数据。</div>');
+  return '<div class="stats"><div class="stat"><span>全部内容</span><strong>'+S.items.length+'</strong></div><div class="stat"><span>已发布</span><strong>'+published+'</strong></div><div class="stat"><span>草稿</span><strong>'+draft+'</strong></div><div class="stat"><span>内容类型</span><strong>'+Object.keys(typeNames).length+'</strong></div></div>'+row('快捷管理','创建内容后可独立生成公开链接','<div class="flex" style="flex-wrap:wrap"><button class="btn green" data-action="open-docx-create">＋ 添加 DOCX 入口</button><button class="btn primary" data-action="new-item">＋ 新建流程 / 页面</button><button class="btn" data-action="tab" data-id="import">导入旧编辑器备份</button><button class="btn" data-action="tab" data-id="assets">上传图片或文件</button><a class="btn" href="/" target="_blank">查看公开首页</a></div>')+row('使用顺序','', '<div class="stack muted">① 在内容管理中创建个人流程、群剧本或页面 → ② 添加步骤、按钮、附件 → ③ 保存草稿并预览 → ④ 发布并复制公开链接。<br>DOCX 模块可以创建文档入口，暂时沿用原有 MS_KHMB 服务，不会修改其数据。</div>');
  }
  if(S.tab==='bookmarks'||S.tab==='profile'){
   const kind=S.tab,rows=S.items.filter(x=>x.kind===kind);
@@ -288,6 +288,61 @@ function adminPanel(){
 
 
  return '';
+}
+async function loadDocxTemplates(force=false){
+ if(S.docxTemplatesReady&&!force)return S.docxTemplates;
+ if(S.docxTemplatesPromise)return S.docxTemplatesPromise;
+ S.docxTemplatesPromise=(async()=>{
+  const result=await api('/api/docx/templates');
+  if(!Array.isArray(result.templates))throw Error('DOCX 模板列表返回格式不正确');
+  S.docxTemplates=result.templates.filter(t=>t&&/^[a-f0-9-]{36}$/i.test(t.id)&&typeof t.name==='string');
+  S.docxTemplatesReady=true;
+  return S.docxTemplates;
+ })();
+ try{return await S.docxTemplatesPromise}
+ finally{S.docxTemplatesPromise=null}
+}
+function docxSelectOptions(selected=''){
+ return '<option value="">请选择现有 DOCX 模板…</option>'+S.docxTemplates.map(t=>
+  '<option value="'+esc(t.id)+'" '+(selected===t.id?'selected':'')+'>'+esc(t.name||t.filename||'未命名模板')+'</option>'
+ ).join('');
+}
+async function showQuickDocxCreate(){
+ await loadDocxTemplates(true);
+ const templateSelect=S.docxTemplates.length?
+  '<select id="quickDocxTemplate" required>'+docxSelectOptions()+'</select>':
+  '<div class="muted">目前还没有 DOCX 模板，请先在「DOCX 模板后台」上传模板。</div>';
+ openModal('<h2>＋ 添加 DOCX 文件入口</h2>'+
+  '<p class="muted small">直接从现有模板库选择，不需要填写模板 ID、公开路径或工作台地址。</p>'+
+  '<div class="field"><label for="quickDocxTitle">前台显示名称</label><input id="quickDocxTitle" maxlength="160" placeholder="例如：制作文件" autocomplete="off"></div>'+
+  '<div class="field"><label for="quickDocxTemplate">选择要直达的 DOCX 模板</label>'+templateSelect+'</div>'+
+  '<div class="flex end" style="margin-top:20px"><button class="btn" data-action="close-modal">取消</button>'+
+  (S.docxTemplates.length?'<button class="btn green" data-action="publish-docx-quick">保存并发布</button>':
+   '<button class="btn" data-action="close-modal">关闭</button>')+'</div>');
+ $('#quickDocxTitle')?.focus();
+}
+function documentEditorHtml(x){
+ const c=x.content||(x.content={});
+ const choices=docxSelectOptions(c.templateId||'');
+ const missing=c.templateId&&!S.docxTemplates.some(t=>t.id===c.templateId);
+ const legacy=missing?'<option value="'+esc(c.templateId)+'" selected>原关联模板（当前模板库里未找到）</option>':'';
+ const templateSelect=S.docxTemplatesReady?
+  '<select data-field="templateId" id="docxEditorTemplate">'+legacy+choices+'</select>':
+  '<p class="muted small">正在读取 DOCX 模板列表…</p>';
+ return row('DOCX 直达入口','只需修改前台名称、选择模板，访问地址由系统自动管理。'+(x.status==='published'?' 当前已发布。':' 当前为草稿。'),
+  field('前台显示名称',x.title,'title','例如：制作文件')+
+  '<div class="field"><label for="docxEditorTemplate">对应 DOCX 模板</label>'+templateSelect+'</div>'+
+  '<p class="muted small">点击这个入口将直接打开选定模板的填写与导出页面。</p>'+
+  '<details class="special-meta-details"><summary>高级设置（通常不用修改）</summary><div class="special-meta-inside">'+
+  field('公开路径',x.slug,'slug','系统自动生成')+
+  field('文档工作台地址',c.docUrl||'/docx','docUrl','/docx')+
+  field('内容简介',x.description,'description','','textarea')+
+  field('排序数字',x.sort_order,'sort_order','1000')+
+  '</div></details>'+
+  '<div class="flex" style="flex-wrap:wrap;margin-top:18px"><button class="btn" data-action="save-item">保存修改</button>'+
+  '<button class="btn green" data-action="publish-item">'+(x.status==='published'?'保存并继续发布':'保存并发布')+'</button>'+
+  (x.id?'<button class="btn" data-action="copy-current">复制前台链接</button><button class="btn danger" data-action="delete-item">删除入口</button>':'')+
+  '</div>');
 }
 function blankBlock(type){
  return {id:crypto.randomUUID(),type,title:blockNames[type]||'新步骤',text:'',zh:'',en:'',seconds:60,speakerId:'',url:'',links:[],assetId:'',files:[]};
@@ -361,6 +416,7 @@ function profileEditorHtml(x){
 function editorHtml(){
  const x=S.edit;if(!x)return '<div class="empty">请先从列表中选择需要编辑的内容</div>';
  if(x.kind==='profile')return profileEditorHtml(x);
+ if(x.kind==='document')return documentEditorHtml(x);
  const c=x.content||(x.content={blocks:[],members:[]});
  const availableTypes=orderedCategoryIds(S.settings);if(!availableTypes.includes(x.kind))availableTypes.push(x.kind);
   const select='<select data-field="kind">'+availableTypes.map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+esc(t)+'">'+esc(typeNames[t]||'原分类')+((S.settings?.deleted_types||[]).includes(t)?'（已删除，保留原内容）':'')+'</option>').join('')+'<option disabled>──────────</option><option value="__create_type__">＋ 新增分类…</option></select>';
