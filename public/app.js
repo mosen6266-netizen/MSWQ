@@ -20,9 +20,11 @@ function orderedCategoryIds(settings){
  return [...new Set([...(settings?.type_order||[]),...keys])].filter(id=>keys.includes(id));
 }
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
-const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null};
+const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',libraryCategory:'all',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null};
 let toastTimer;
 let draggedCategory='';
+let draggedContent='';
+let draggedContentGroup='';
 function toast(t){const n=$('#toast');n.textContent=t;n.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.classList.remove('show'),2600)}
 async function api(path,opts={}){
  const response=await fetch(path,{credentials:'same-origin',cache:'no-store',...opts});
@@ -279,9 +281,7 @@ function adminPanel(){
    '<div class="flex" style="flex-wrap:wrap;margin-bottom:16px"><button class="btn green" data-action="new-special" data-id="'+kind+'">＋ 新建'+(kind==='profile'?'个人名片':'网址收藏夹')+'</button><span class="muted small">'+rows.length+' 个</span></div>'+
    (rows.length?'<div class="special-list">'+rows.map(x=>'<div class="special-list-item"><div><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc(x.slug)+' · '+(x.status==='published'?'已发布':'草稿')+'</div></div><div class="flex" style="flex-wrap:wrap"><button class="btn sm" data-action="edit-item" data-id="'+x.id+'">编辑</button><button class="btn sm" data-action="copy-url" data-id="'+x.id+'">复制链接</button><button class="btn sm" data-action="quick-status" data-id="'+x.id+'">'+(x.status==='published'?'下架':'发布')+'</button></div></div>').join('')+'</div>':'<div class="empty">还没有内容，点击「新建」开始添加</div>'));
  }
- if(S.tab==='library'){
-  return row('内容列表','修改排序数字可调整公开首页的显示顺序','<div class="flex" style="margin-bottom:14px"><input id="adminSearch" class="input" placeholder="查找内容名称、分类、标签…" value="'+esc(S.search)+'"></div><div style="overflow:auto"><table class="admin-table"><thead><tr><th>标题 / 路径</th><th>类型</th><th>状态</th><th>排序</th><th>最后更新</th><th style="text-align:right">操作</th></tr></thead><tbody>'+S.items.filter(x=>(x.title+' '+x.slug+' '+x.category).toLowerCase().includes(S.search.toLowerCase())).map(x=>'<tr><td><strong>'+esc(x.title)+'</strong><div class="tiny muted truncate">/view/'+esc(x.slug)+'</div></td><td>'+esc(typeNames[x.kind])+'</td><td><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></td><td>'+x.sort_order+'</td><td class="small muted">'+fmt(x.updated_at)+'</td><td><div class="actions"><button class="btn sm" data-action="edit-item" data-id="'+x.id+'">编辑</button><button class="btn sm" data-action="copy-url" data-id="'+x.id+'">链接</button><button class="btn sm" data-action="quick-status" data-id="'+x.id+'">'+(x.status==='published'?'下架':'发布')+'</button></div></td></tr>').join('')+'</tbody></table></div>') ;
- }
+ if(S.tab==='library')return libraryHtml();
  if(S.tab==='editor')return editorHtml();
  if(S.tab==='assets')return assetsHtml();
  if(S.tab==='settings')return settingsHtml();
@@ -290,6 +290,56 @@ function adminPanel(){
 
 
  return '';
+}
+function frontTabForItem(x){return x.kind==='document'?(x.category||'document'):x.kind;}
+function libraryTabIds(){
+ const tabs=orderedCategoryIds(S.settings),attached=[...new Set(S.items.map(frontTabForItem))];
+ return [...new Set([...tabs,...attached])];
+}
+function libraryHtml(){
+ const tabs=libraryTabIds();
+ if(S.libraryCategory!=='all'&&!tabs.includes(S.libraryCategory))S.libraryCategory='all';
+ const selected=S.libraryCategory,query=S.search.trim().toLocaleLowerCase(),sortingDisabled=!!query;
+ const matches=x=>!query||[x.title,x.slug,x.description,x.category,typeNames[x.kind],typeNames[frontTabForItem(x)],(x.tags||[]).join(' ')]
+  .some(value=>String(value||'').toLocaleLowerCase().includes(query));
+ const counts=Object.fromEntries(tabs.map(id=>[id,S.items.filter(x=>frontTabForItem(x)===id).length]));
+ const filters='<div class="library-tabs"><button type="button" class="library-tab '+(selected==='all'?'active':'')+'" data-action="library-filter" data-id="all" aria-pressed="'+(selected==='all')+'">全部分组 <span>'+S.items.length+'</span></button>'+
+  tabs.map(id=>'<button type="button" class="library-tab '+(selected===id?'active':'')+'" data-action="library-filter" data-id="'+esc(id)+'" aria-pressed="'+(selected===id)+'">'+esc(typeNames[id]||id)+
+   ((S.settings?.deleted_types||[]).includes(id)?'（已移除）':(S.settings?.hidden_types||[]).includes(id)?'（已隐藏）':'')+' <span>'+counts[id]+'</span></button>').join('')+'</div>';
+ const groups=tabs.filter(id=>selected==='all'||id===selected).map(id=>{
+  const all=S.items.filter(item=>frontTabForItem(item)===id),visible=all.filter(matches);
+  if(!visible.length&&selected==='all')return '';
+  const rows=visible.map(x=>{
+   const index=all.findIndex(item=>item.id===x.id),canSort=!sortingDisabled&&all.length>1;
+   return '<tr class="library-sort-row" draggable="'+canSort+'" data-content-row="'+esc(x.id)+'" data-content-group="'+esc(id)+'">'+
+    '<td class="library-sort-cell"><span class="library-grip" title="拖动调整排序">⠿</span><span class="library-index">'+(index+1)+'</span></td>'+
+    '<td><strong>'+esc(x.title)+'</strong><div class="tiny muted truncate">/view/'+esc(x.slug)+'</div></td>'+
+    '<td><span class="library-tab-label">'+esc(typeNames[id]||id)+'</span></td>'+
+    '<td class="small muted">'+esc(typeNames[x.kind]||x.kind)+'</td>'+
+    '<td><span class="pill '+esc(x.status)+'">'+(x.status==='published'?'已发布':'草稿')+'</span></td>'+
+    '<td class="library-row-actions"><div class="actions">'+
+     '<button class="btn sm" data-action="move-content" data-id="'+esc(x.id)+'" data-dir="-1" title="上移" '+(!canSort||index===0?'disabled':'')+'>↑</button>'+
+     '<button class="btn sm" data-action="move-content" data-id="'+esc(x.id)+'" data-dir="1" title="下移" '+(!canSort||index===all.length-1?'disabled':'')+'>↓</button>'+
+     '<button class="btn sm" data-action="edit-item" data-id="'+esc(x.id)+'">编辑</button>'+
+     '<button class="btn sm" data-action="copy-url" data-id="'+esc(x.id)+'">链接</button>'+
+     '<button class="btn sm" data-action="quick-status" data-id="'+esc(x.id)+'">'+(x.status==='published'?'下架':'发布')+'</button>'+
+    '</div></td></tr>';
+  }).join('');
+  const published=all.filter(x=>x.status==='published').length;
+  return '<section class="library-group" data-library-group="'+esc(id)+'">'+
+   '<div class="library-group-head"><div><h3>'+esc(typeNames[id]||id)+'</h3><p>前台标签页 · '+published+' 条已发布 / 共 '+all.length+' 条'+
+   ((S.settings?.deleted_types||[]).includes(id)?' · 分类已删除，原内容保留':(S.settings?.hidden_types||[]).includes(id)?' · 前台已隐藏':'')+'</p></div>'+
+   '<span class="library-group-count">'+all.length+' 条</span></div>'+
+   (visible.length?'<div class="library-table-wrap"><table class="admin-table library-table"><thead><tr><th>顺序</th><th>标题 / 路径</th><th>所在标签页</th><th>内容形式</th><th>状态</th><th class="library-action-heading">排序 / 操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>':
+    '<div class="empty">该标签下没有匹配的内容</div>')+'</section>';
+ }).join('');
+ return row('按前台标签页管理内容','每条内容显示所属标签页；同一标签内支持拖动、上移、下移排序，保存后同步前台。',
+  '<div class="library-toolbar"><input id="adminSearch" class="input" placeholder="搜索内容名称、标签页、路径…" value="'+esc(S.search)+'" autocomplete="off">'+
+  '<span class="muted small">内容类型与前台标签分开显示，排序不会改变内容或直达链接。</span></div>'+
+  filters+
+  (sortingDisabled?'<p class="library-sort-note">搜索结果中暂不支持排序，清空搜索即可拖动调整。</p>':
+    '<p class="library-sort-note">拖动左侧 ⠿ 所在行，或使用 ↑ ↓；标签页之间的排序请在「分类管理」中调整。</p>')+
+  (groups||'<div class="empty">暂无内容</div>'));
 }
 async function loadDocxTemplates(force=false){
  if(S.docxTemplatesReady&&!force)return S.docxTemplates;
