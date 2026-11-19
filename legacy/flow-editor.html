@@ -707,6 +707,21 @@ body.p-on .p-right > .p-right-head {flex:0 0 auto;}
 .p-replace-preview-item .p-replace-after{color:#fafaf9;white-space:pre-wrap;margin-top:3px}
 .p-replace-dialog .p-dialog-actions{justify-content:flex-end;flex-wrap:wrap}
 @media(max-width:600px){.p-replace-fields{grid-template-columns:minmax(0,1fr)}.p-title-actions{align-items:flex-start}.p-replace-dialog .p-dialog-body{padding:15px}}
+
+.g-replace-trigger{flex-shrink:0;white-space:nowrap;border-color:#468463!important;color:#b7edca!important;background:#203b2d!important}
+.g-replace-trigger:hover{background:#2c6042!important}
+.g-replace-dialog{background:#232527;color:#edf1ed;border-color:#4a4d4f}
+.g-replace-dialog .p-dialog-head{border-color:#464a49}
+.g-replace-dialog .p-form-label{color:#d0dfd3}
+.g-replace-dialog .p-input{background:#191b1d;color:#f1f3f0;border:1px solid #505552;border-radius:8px;padding:9px;min-width:0}
+.g-replace-dialog .p-input:focus{border-color:#5db888;outline:2px solid #4e976b55}
+.g-replace-dialog .p-replace-check input{accent-color:#60be8e}
+.g-replace-dialog .p-replace-results{background:#191b1c;border-color:#474a49}
+.g-replace-dialog .p-replace-preview-item{background:#292c2d;border-color:#474b49}
+.g-replace-dialog .p-replace-preview-item:hover{background:#383031;border-color:#d76e77}
+.g-replace-target{border:2px solid #ef4352!important;box-shadow:0 0 0 3px #ef435230!important}
+.g-replace-highlight{outline:2px solid #ff4350;outline-offset:1px;background:#ca3a5550;color:transparent;border-radius:2px;box-decoration-break:clone}
+@media(max-width:880px){#mainHeader{flex-wrap:wrap}.g-replace-trigger{order:1}#mainHeader #search{order:2}}
 </style>
 <style id="personal-find-position-styles">
 .p-replace-dialog{width:min(760px,96vw)}
@@ -752,6 +767,7 @@ textarea.p-replace-target{border:2px solid #f04452!important;background:#2a191e!
           <div id="currentTitle" class="script-title"></div>
           <div id="currentSub" class="script-sub"></div>
         </div>
+        <button type="button" class="btn g-replace-trigger" id="gReplaceTrigger" title="搜索和批量替换当前群剧本的文本">⌕ 全局搜索替换</button>
         <input id="search" class="search" placeholder="搜索当前剧本…">
         <button class="btn" id="showAllBtn">全部流程</button>
       </div>
@@ -761,6 +777,26 @@ textarea.p-replace-target{border:2px solid #f04452!important;background:#2a191e!
   </div>
 </div>
 
+<div class="p-modal" id="gReplaceDialog" role="dialog" aria-modal="true" aria-labelledby="gReplaceDialogTitle">
+  <div class="p-dialog p-replace-dialog g-replace-dialog">
+    <div class="p-dialog-head"><strong id="gReplaceDialogTitle">当前群剧本 · 全局搜索替换</strong><button type="button" class="p-btn small" data-g-replace-close aria-label="关闭搜索替换">✕</button></div>
+    <div class="p-dialog-body">
+      <div class="p-replace-hint" id="gReplaceScriptName">搜索当前剧本全部双语话术。</div>
+      <div class="p-replace-fields">
+        <label class="p-form-label">查找文字 / 符号<input class="p-input" id="gReplaceFind" type="text" spellcheck="false" autocomplete="off" placeholder="输入关键词或符号"></label>
+        <label class="p-form-label">替换为<input class="p-input" id="gReplaceWith" type="text" spellcheck="false" autocomplete="off" placeholder="留空则删除匹配文字"></label>
+      </div>
+      <div class="p-replace-options">
+        <label class="p-form-label">话术搜索范围<select class="p-input" id="gReplaceScope"><option value="both">全部话术：中文 + 英文/德文</option><option value="zh">仅中文话术</option><option value="foreign">仅英文/德文话术</option></select></label>
+        <label class="p-replace-check"><input type="checkbox" id="gReplaceIgnoreCase">英文不区分大小写</label>
+        <label class="p-replace-check"><input type="checkbox" id="gReplaceNotes">同时包含绿色提示正文</label>
+      </div>
+      <div class="p-replace-results" id="gReplaceResults" role="status" aria-live="polite"><div class="p-replace-summary">输入查找内容后预览结果</div></div>
+      <div class="p-replace-hint">在当前群剧本中按原样匹配数字、符号和文字。点击结果可跳转定位，执行后保存到本机；不修改成员、剧本标题、链接和附件。</div>
+      <div class="p-dialog-actions"><button class="p-btn green" type="button" id="gReplaceApply" disabled>替换全部</button><button class="p-btn red" type="button" data-g-replace-close>取消</button></div>
+    </div>
+  </div>
+</div>
 <section id="personalPage" class="p-page" aria-label="个人流程话术">
   <aside class="p-sidebar">
     <div class="p-side-head">
@@ -1369,6 +1405,7 @@ $('#search').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault
 function renderMain(){
  renderNoteNav();gKeywordEditor();gRenderCustomNav();
   const flow=$('#flow'),head=$('#mainHeader'),s=current();
+  $('#gReplaceTrigger').disabled=!s;
   if(!s){
     head.style.display='none';
     flow.innerHTML=`<div class="blank"><div><strong>请选择左侧剧本</strong>没有选择剧本时，中间区域保持空白。</div></div>`;
