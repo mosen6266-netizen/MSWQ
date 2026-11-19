@@ -6,6 +6,8 @@ const $=selector=>document.querySelector(selector);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlOk=x=>{try{return ['http:','https:'].includes(new URL(x,location.origin).protocol)}catch{return false}};
 const asset=id=>id?'/api/asset/'+encodeURIComponent(id):'';
+const htmlUrl=id=>/^[a-f0-9-]{36}$/i.test(String(id||''))?'https://mswq-html.mosen6266-ms007.workers.dev/html/'+id+'/':'';
+const shareUrl=item=>item?.kind==='html'?htmlUrl(item.content?.htmlAssetId):location.origin+itemHref(item);
 const absoluteHttpUrl=x=>{try{const v=new URL(x);return ['http:','https:'].includes(v.protocol)}catch{return false}};
 const builtinTypes={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具',bookmarks:'网址收藏',profile:'个人名片'};
 const typeNames={...builtinTypes};
@@ -67,24 +69,24 @@ function homeRender(){
  const c=S.settings||{},types=[...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k))),'all'];
  if(!types.includes(S.filter))S.filter=types[0]||'all';
  const matching=text=>String(text||'').toLowerCase().includes(S.search.toLowerCase());
- const items=S.items.filter(x=>(S.filter==='all'||(x.kind==='document'?(x.category||'document'):x.kind)===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
+ const items=S.items.filter(x=>(S.filter==='all'||frontTabForItem(x)===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
  const isBookmarkTab=S.filter==='bookmarks';
  const bookmarkRows=isBookmarkTab?S.bookmarkEntries.filter(x=>matching([x.title,x.note,x.url,x.collectionTitle].join(' '))):[];
  const busy=isBookmarkTab&&!S.bookmarksLoaded&&!S.bookmarksError;
- const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length+items.filter(x=>x.kind==='document').length:'…'):items.length;
- const cards=(isBookmarkTab?items.filter(x=>x.kind==='document'):items).map(x=>{
+ const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length+items.filter(x=>['document','html'].includes(x.kind)).length:'…'):items.length;
+ const cards=(isBookmarkTab?items.filter(x=>['document','html'].includes(x.kind)):items).map(x=>{
   const direct=x.direct_url&&absoluteHttpUrl(x.direct_url)?x.direct_url:'';
   const destination=direct?direct:itemHref(x);
   const tabAttrs=direct?' target="_blank" rel="noopener noreferrer"':'';
-  return '<a class="tile" href="'+esc(destination)+'"'+tabAttrs+'><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(direct?'打开完整页面 ↗':x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>';
+  return '<a class="tile" href="'+esc(destination)+'"'+tabAttrs+'><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(x.kind==='html'?'HTML 文件':typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(direct?'打开完整页面 ↗':x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>';
  }).join('');
  let content;
  if(isBookmarkTab){
   content=S.bookmarksError?'<div class="empty">网址收藏加载失败：'+esc(S.bookmarksError)+' <button class="btn sm" data-action="retry-bookmarks">重试</button></div>':
    busy?'<div class="loading center">正在加载收藏网址…</div>':
-   (bookmarkRows.length||items.some(x=>x.kind==='document'))?
+   (bookmarkRows.length||items.some(x=>['document','html'].includes(x.kind)))?
     (bookmarkRows.length?'<section class="bookmark-public-grid home-bookmark-grid">'+bookmarkRows.map(bookmarkCard).join('')+'</section>':'')+
-    (items.some(x=>x.kind==='document')?'<div class="grid bookmark-docx-grid">'+cards+'</div>':''):
+    (items.some(x=>['document','html'].includes(x.kind))?'<div class="grid bookmark-docx-grid">'+cards+'</div>':''):
    '<div class="empty">'+(S.search?'没有匹配的收藏网址或文档':'尚未发布收藏网址或文档入口')+'</div>';
  }else{
   content=items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>';
@@ -284,7 +286,7 @@ function sideNav(){
 function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
  const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'全部分类都能重命名、拖动排序、隐藏、删除和恢复，不影响原有内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
- const action=S.tab==='library'?'<button class="btn green" data-action="open-docx-create">＋ 添加 DOCX 入口</button><button class="btn primary" data-action="new-item">＋ 新建其他内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
+ const action=S.tab==='library'?'<button class="btn green" data-action="new-html-card">＋ 添加 HTML 卡片</button><button class="btn green" data-action="open-docx-create">＋ 添加 DOCX 入口</button><button class="btn primary" data-action="new-item">＋ 新建其他内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
  // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
   const isDocx=S.tab==='legacy-docx';
@@ -317,7 +319,7 @@ function adminPanel(){
 
  return '';
 }
-function frontTabForItem(x){return x.kind==='document'?(x.category||'document'):x.kind;}
+function frontTabForItem(x){return ['document','html'].includes(x.kind)?(x.category||(x.kind==='html'?'page':'document')):x.kind;}
 function libraryTabIds(){
  const tabs=orderedCategoryIds(S.settings),attached=[...new Set(S.items.map(frontTabForItem))];
  return [...new Set([...tabs,...attached])];
@@ -546,7 +548,7 @@ function blockEditor(b,i,members){
 }
 function fieldMiniText(b,i){return '<div class="field" style="margin-top:9px"><label>内容 / 说明</label><textarea data-block="'+i+'" data-bfield="text">'+esc(b.text||'')+'</textarea></div>'}
 function assetsHtml(){
- return row('素材库','上传后点击复制链接；正文图片和附件在步骤编辑中可直接选择','<div class="field"><label>添加图片 / 文件（视频最高 50MB，其他文件 12MB）</label><input type="file" id="assetUpload" accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
+ return row('素材库','上传后点击复制链接；正文图片和附件在步骤编辑中可直接选择','<div class="field"><label>添加 HTML、图片和文件（HTML 35MB，视频 50MB，其他 12MB）</label><input type="file" id="assetUpload" accept=".html,.htm,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
 }
 function assetCard(a,picker=false){
  return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':a.mime?.startsWith('video/')?'<video muted playsinline preload="metadata" src="'+asset(a.id)+'"></video>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
@@ -874,11 +876,11 @@ async function uploadAssets(){
  if(!files.length)return toast('请先选择文件');
  let success=0;
  for(const file of files){
-  const limit=/\.(?:mp4|webm)$/i.test(file.name)||file.type.startsWith('video/')?50000000:12000000;
-  if(file.size>limit){toast('文件超过'+(limit===50000000?'50MB':'12MB')+': '+file.name);continue}
+  const limit=/\.(?:mp4|webm)$/i.test(file.name)||file.type.startsWith('video/')?50000000:/\.html?$/i.test(file.name)?35000000:12000000;
+  if(file.size>limit){toast('文件超过'+(limit===50000000?'50MB':limit===35000000?'35MB':'12MB')+': '+file.name);continue}
   let mime=file.type;
-  if(!mime){const ext=file.name.split('.').pop().toLowerCase();mime={docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',mp4:'video/mp4',webm:'video/webm',txt:'text/plain',zip:'application/zip'}[ext]||'application/octet-stream'}
-  await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+  if(!mime){const ext=file.name.split('.').pop().toLowerCase();mime={docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',mp4:'video/mp4',webm:'video/webm',txt:'text/plain',zip:'application/zip',html:'text/html',htm:'text/html'}[ext]||'application/octet-stream'}
+  await api('/api/admin/assets',{method:'POST',headers:{'content-type':/\.html?$/i.test(file.name)?'text/html':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
   success++;
  }
  await loadAssets();adminRender();toast('成功上传 '+success+' 个文件');
