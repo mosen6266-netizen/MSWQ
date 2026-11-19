@@ -20,7 +20,7 @@ function orderedCategoryIds(settings){
  return [...new Set([...(settings?.type_order||[]),...keys])].filter(id=>keys.includes(id));
 }
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
-const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library'};
+const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:''};
 let toastTimer;
 let draggedCategory='';
 function toast(t){const n=$('#toast');n.textContent=t;n.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.classList.remove('show'),2600)}
@@ -45,15 +45,42 @@ function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
 async function showHome(){
  document.title='MSWQ · 内容与工具中心';S.preview=false;
  root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
- try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;applyCustomTypes(S.settings);homeRender();}
+ try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);homeRender();}
  catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
+}
+async function loadPublicBookmarks(){
+ if(S.bookmarksLoaded)return;
+ if(S.bookmarksPromise)return S.bookmarksPromise;
+ const collections=S.items.filter(item=>item.kind==='bookmarks'&&item.status==='published');
+ S.bookmarksPromise=(async()=>{
+  const details=await Promise.all(collections.map(item=>api('/api/public/item/'+encodeURIComponent(item.slug))));
+  S.bookmarkEntries=details.flatMap(({item})=>(Array.isArray(item.content?.entries)?item.content.entries:[])
+   .filter(entry=>entry&&absoluteHttpUrl(entry.url))
+   .map(entry=>({...entry,collectionTitle:item.title||''})));
+  S.bookmarksLoaded=true;
+ })();
+ try{await S.bookmarksPromise}finally{S.bookmarksPromise=null;}
 }
 function homeRender(){
  const c=S.settings||{},types=['all',...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k)))];
  if(S.filter!=='all'&&!types.includes(S.filter))S.filter='all';
- const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&[x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ').toLowerCase().includes(S.search.toLowerCase()));
+ const matching=text=>String(text||'').toLowerCase().includes(S.search.toLowerCase());
+ const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
+ const isBookmarkTab=S.filter==='bookmarks';
+ const bookmarkRows=isBookmarkTab?S.bookmarkEntries.filter(x=>matching([x.title,x.note,x.url,x.collectionTitle].join(' '))):[];
+ const busy=isBookmarkTab&&!S.bookmarksLoaded&&!S.bookmarksError;
+ const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length:'…'):items.length;
  const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
- root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
+ let content;
+ if(isBookmarkTab){
+  content=S.bookmarksError?'<div class="empty">网址收藏加载失败：'+esc(S.bookmarksError)+' <button class="btn sm" data-action="retry-bookmarks">重试</button></div>':
+   busy?'<div class="loading center">正在加载收藏网址…</div>':
+   bookmarkRows.length?'<section class="bookmark-public-grid home-bookmark-grid">'+bookmarkRows.map(bookmarkCard).join('')+'</section>':
+   '<div class="empty">'+(S.search?'没有匹配的收藏网址':'尚未发布收藏网址，请在后台「网址收藏」里添加并发布')+'</div>';
+ }else{
+  content=items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>';
+ }
+ root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="'+(isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…')+'" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':esc(typeNames[t]))+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+count+' 个'+(isBookmarkTab?'网址':'内容')+'</span></div>'+content+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
 function anchorButton(label,url){
  if(!urlOk(url))return '';
@@ -99,18 +126,20 @@ function mediaTrigger(mediaType,fileId,label){
   '<span class="profile-media-label">点击放大预览</span></button>'+
   '<a class="profile-media-download" href="'+asset(fileId)+'?download=1" download>↓ 保存 / 下载'+(video?'视频':'图片')+'</a>';
 }
+function bookmarkCard(x){
+ if(!x||!absoluteHttpUrl(x.url))return '';
+ const url=new URL(x.url),domain=url.hostname.replace(/^www\./,'');
+ return '<article class="bookmark-public-card">'+
+  '<div class="bookmark-public-image">'+(x.assetId?'<button type="button" class="bookmark-cover-preview" data-action="media-preview" data-id="'+esc(x.assetId)+'" data-media="image" data-title="'+esc(x.title)+'" aria-label="放大预览网站封面"><img loading="lazy" src="'+asset(x.assetId)+'" alt="'+esc(x.title)+'"></button>':'<span>↗</span>')+'</div>'+
+  '<div class="bookmark-public-info"><div class="bookmark-domain">'+esc(domain)+'</div><h2>'+esc(x.title||domain)+'</h2>'+
+  (x.note?'<p>'+esc(x.note)+'</p>':'')+
+  '<div class="bookmark-card-actions"><a class="bookmark-open" href="'+esc(url.href)+'" target="_blank" rel="noopener noreferrer">打开网址 ↗</a>'+
+  '<button class="bookmark-copy" type="button" data-action="copy-bookmark" data-id="'+esc(x.id)+'" data-url="'+esc(url.href)+'">复制链接</button></div>'+
+  '</div></article>';
+}
 function bookmarksPublic(item,preview){
  const entries=Array.isArray(item.content?.entries)?item.content.entries:[];
- const cards=entries.filter(x=>x&&absoluteHttpUrl(x.url)).map(x=>{
-  const url=new URL(x.url),domain=url.hostname.replace(/^www\./,'');
-  return '<article class="bookmark-public-card">'+
-   '<div class="bookmark-public-image">'+(x.assetId?'<button type="button" class="bookmark-cover-preview" data-action="media-preview" data-id="'+esc(x.assetId)+'" data-media="image" data-title="'+esc(x.title)+'" aria-label="放大预览网站封面"><img loading="lazy" src="'+asset(x.assetId)+'" alt="'+esc(x.title)+'"></button>':'<span>↗</span>')+'</div>'+
-   '<div class="bookmark-public-info"><div class="bookmark-domain">'+esc(domain)+'</div><h2>'+esc(x.title||domain)+'</h2>'+
-   (x.note?'<p>'+esc(x.note)+'</p>':'')+
-   '<div class="bookmark-card-actions"><a class="bookmark-open" href="'+esc(url.href)+'" target="_blank" rel="noopener noreferrer">打开网址 ↗</a>'+
-   '<button class="bookmark-copy" type="button" data-action="copy-bookmark" data-id="'+esc(x.id)+'">复制链接</button></div>'+
-   '</div></article>';
- }).join('');
+ const cards=entries.filter(x=>x&&absoluteHttpUrl(x.url)).map(bookmarkCard).join('');
  return publicHeader(true)+'<main class="collection-page"><div class="collection-heading"><span class="collection-kicker">SAVED LINKS</span><h1>'+esc(item.title)+'</h1>'+
   (item.description?'<p>'+esc(item.description)+'</p>':'')+(preview?'<button class="btn sm" data-action="back-edit">← 返回编辑</button>':'')+
   '</div>'+(cards?'<section class="bookmark-public-grid">'+cards+'</section>':'<div class="empty">这个收藏夹还没有可以打开的网址</div>')+'</main>';
@@ -422,7 +451,19 @@ async function reorderCategory(source,target,step=0){
 
 async function perform(action,id,el){
  switch(action){
- case 'filter':S.filter=id;homeRender();break;
+ case 'filter':{
+ S.filter=id;
+ if(id==='bookmarks'&&!S.bookmarksLoaded){
+  S.bookmarksError='';homeRender();
+  try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}
+ }
+ homeRender();break;
+}
+case 'retry-bookmarks':{
+ S.bookmarksError='';homeRender();
+ try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}
+ homeRender();break;
+}
  case 'jump':document.getElementById('step-'+id)?.scrollIntoView({behavior:'smooth'});break;
  case 'copy-text':{
   const block=(S.viewer?.content?.blocks||[]).find(b=>b.id===id);
@@ -485,8 +526,9 @@ async function perform(action,id,el){
  case 'media-preview':openMediaPreview(id,el.dataset.media,el.dataset.title);break;
  case 'close-media-preview':document.getElementById('mediaPreview')?.remove();break;
  case 'copy-bookmark':{
-  const bookmark=S.viewer?.content?.entries?.find(e=>e.id===id);
-  if(bookmark){await navigator.clipboard.writeText(String(bookmark.url||''));toast('网址已复制');}break;
+  const url=el.dataset.url||S.viewer?.content?.entries?.find(e=>e.id===id)?.url||'';
+  if(!absoluteHttpUrl(url))return toast('没有可复制的有效网址');
+  await navigator.clipboard.writeText(url);toast('网址已复制');break;
  }
  case 'copy-link-url':await navigator.clipboard.writeText(el.dataset.url||'');toast('链接已复制');break;
  case 'copy-profile':{
