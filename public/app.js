@@ -539,9 +539,35 @@ case 'retry-bookmarks':{
   if(id==='assets')await loadAssets();
   adminRender();break;
  }
+ case 'open-docx-create':await showQuickDocxCreate();break;
+ case 'publish-docx-quick':{
+  const name=($('#quickDocxTitle')?.value||'').trim(),templateId=$('#quickDocxTemplate')?.value||'';
+  if(!name)return toast('请填写前台名称，例如：制作文件');
+  if(!S.docxTemplates.some(t=>t.id===templateId))return toast('请从现有模板中选择一个文件');
+  const btn=el;btn.disabled=true;btn.textContent='正在发布…';
+  try{
+   if((S.settings?.deleted_types||[]).includes('document')){
+    const restored=await api('/api/admin/types/restore',{method:'PUT',...jsonBody({id:'document'})});
+    S.settings.deleted_types=restored.deleted_types;S.settings.hidden_types=restored.hidden_types;S.settings.type_order=restored.type_order;
+   }
+   const item={kind:'document',status:'published',title:name,slug:'docx-'+crypto.randomUUID().replace(/-/g,'').slice(0,16),
+    description:'',category:'',tags:[],sort_order:1000,thumbnail:'',
+    content:{docUrl:'/docx',templateId,blocks:[],members:[]}};
+   const created=await api('/api/admin/items',{method:'POST',...jsonBody(item)});
+   await loadAdmin();S.tab='library';adminRender();
+   const fullUrl=location.origin+itemHref(created.item);
+   openModal('<h2>DOCX 入口已发布</h2><p>「'+esc(name)+'」已出现在前台的 DOCX 分类中，点击即可直达选中的模板。</p>'+
+    '<div class="field"><label>自动生成的前台链接</label><input readonly value="'+esc(fullUrl)+'"></div>'+
+    '<div class="flex end"><button class="btn" data-action="close-modal">关闭</button>'+
+    '<button class="btn primary" data-action="copy-link-url" data-url="'+esc(fullUrl)+'">复制链接</button>'+
+    '<a class="btn green" href="'+esc(fullUrl)+'" target="_blank" rel="noopener noreferrer">打开前台</a></div>');
+   toast('DOCX 入口「'+name+'」已发布');
+  }finally{btn.disabled=false;btn.textContent='保存并发布';}
+  break;
+ }
  case 'new-item':newItem();break;
  case 'new-special':newItem(id);break;
- case 'edit-item':S.returnTab=S.tab;S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';adminRender();break;
+ case 'edit-item':S.returnTab=S.tab;S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';if(S.edit?.kind==='document')await loadDocxTemplates();adminRender();break;
  case 'add-block':S.edit.content.blocks.push(blankBlock(id));adminRender();break;
  case 'remove-block':S.edit.content.blocks.splice(Number(id),1);adminRender();break;
  case 'move-block':{
@@ -704,6 +730,15 @@ async function saveCurrent(publish){
   const link=item.kind==='link'?item.content.url:item.content.docUrl;
   if(link&&!urlOk(link))return toast('链接地址必须以 https:// 或 http:// 开头');
  }
+ if(item.kind==='document'){
+  if(!S.docxTemplatesReady)await loadDocxTemplates();
+  if(!S.docxTemplates.some(t=>t.id===item.content?.templateId))return toast('请选择一个现有 DOCX 模板');
+  item.content.docUrl=item.content.docUrl||'/docx';
+  if((S.settings?.deleted_types||[]).includes('document')&&!item.id){
+   const restored=await api('/api/admin/types/restore',{method:'PUT',...jsonBody({id:'document'})});
+   S.settings.deleted_types=restored.deleted_types;S.settings.hidden_types=restored.hidden_types;S.settings.type_order=restored.type_order;
+  }
+ }
  if(item.kind==='bookmarks'){
   const entries=item.content.entries||[];
   if(publish&&!entries.length)return toast('请先添加至少一个收藏网址');
@@ -841,6 +876,7 @@ document.addEventListener('change',async e=>{
    return;
   }
   S.edit.kind=t.value;S.edit.content.blocks=S.edit.content.blocks||[];
+  if(t.value==='document')await loadDocxTemplates();
   adminRender();
  }
 });
