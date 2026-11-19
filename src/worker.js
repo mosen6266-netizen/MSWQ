@@ -497,6 +497,17 @@ async function handler(req,env){
   try{return out({ok:true,item:await saveItem(env,item)},201)}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请更换 slug',409);throw e;}
  }
  const exactMatch=p.match(new RegExp('^/api/admin/items/([a-f0-9-]{32,40})/export-html$'));
+ // Recover the exact editable group source stored inside the original HTML.
+ // This endpoint is admin-only (same authorization gate as other /api/admin APIs).
+ if(method==='GET'&&exactMatch){
+  const row=await env.DB.prepare("SELECT id,kind FROM items WHERE id=?").bind(exactMatch[1]).first();
+  if(!row||row.kind!=='group')return fail('找不到对应的群剧本',404);
+  const file=await env.FILES.get('published-readers/'+row.id+'.html');
+  if(!file)return fail('尚未找到保存的原版 HTML，可在原编辑器重新发布一次',404);
+  return new Response(file.body,{status:200,headers:{
+   'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'
+  }});
+ }
  if(method==='PUT'&&exactMatch){
   const id=exactMatch[1];
   const item=await env.DB.prepare('SELECT id,kind,version,title,content FROM items WHERE id=?').bind(id).first();
