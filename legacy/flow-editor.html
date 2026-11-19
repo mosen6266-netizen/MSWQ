@@ -1015,6 +1015,12 @@ let db=normalizeDB(load()), selectedScriptId=null, selectedMemberId='all', selec
 let composerActorId=null, composerDraftZh='', composerDraftForeign='', composerPendingFile=null, composerEditingId=null;
 let selectedSpeechId=null;
 
+// The MSWQ publishing bridge must read the live editor state. Imported HTML
+// appears in this list before the browser's debounced localStorage write,
+// and large embedded attachments can cause that write to exceed its quota.
+window.mswqGetLiveGroupScripts=()=>db.scripts;
+window.mswqSaveGroupScriptsNow=()=>persistNow(false);
+
 function persistNow(silent=false){
   clearTimeout(saveTimer);saveTimer=null;
   try{
@@ -1829,7 +1835,7 @@ function normalizeImportedScript(raw){
   });
   const groupIdMap=new Map();const groups=(raw.customNavGroups||[]).map(g=>{const id=uid();groupIdMap.set(String(g.id),id);return {id,name:String(g.name||'自定义导航'),items:(g.items||[]).map(k=>({id:uid(),title:String(k.title||''),value:String(k.value||'')}))}});
   const navOrder=(raw.navOrder||[]).map(k=>String(k).startsWith('custom:')?'custom:'+(groupIdMap.get(String(k).slice(7))||''):k).filter(k=>k==='notes'||k==='keywords'||(k.startsWith('custom:')&&k.length>7));
-  return {navOrder,navDisabled:(raw.navDisabled||[]).filter(k=>k==='notes'||k==='keywords'),noteNavOrder:(raw.noteNavOrder||[]).map(id=>noteIdMap.get(String(id))).filter(Boolean),id:uid(),keywords:(raw.keywords||[]).map(k=>({id:uid(),title:String(k.title||''),value:String(k.value||'')})),customNavGroups:groups,name:uniqueImportedName(String(raw.name||'导入剧本')),lang:raw.lang==='de'||raw.lang==='en'?raw.lang:(String(raw.name||'').includes('德国')?'de':'en'),note:String(raw.note??''),members,steps};
+  return {mswqImportedFromHtml:true,navOrder,navDisabled:(raw.navDisabled||[]).filter(k=>k==='notes'||k==='keywords'),noteNavOrder:(raw.noteNavOrder||[]).map(id=>noteIdMap.get(String(id))).filter(Boolean),id:uid(),keywords:(raw.keywords||[]).map(k=>({id:uid(),title:String(k.title||''),value:String(k.value||'')})),customNavGroups:groups,name:uniqueImportedName(String(raw.name||'导入剧本')),lang:raw.lang==='de'||raw.lang==='en'?raw.lang:(String(raw.name||'').includes('德国')?'de':'en'),note:String(raw.note??''),members,steps};
 }
 function importReaderHtml(file){
   const r=new FileReader();
@@ -1839,7 +1845,9 @@ function importReaderHtml(file){
       const script=normalizeImportedScript(raw);
       db.scripts.push(script);
       selectedScriptId=script.id;selectedMemberId='all';selectedStepId=null;
-      save();render();toast('查看版 HTML 已恢复为可编辑剧本');
+      const locallySaved=persistNow(false);
+      render();
+      toast(locallySaved?'查看版 HTML 已导入，可在发布菜单选择此剧本':'已导入当前编辑器，但本地存储空间不足：请先备份，仍可在发布菜单选择此剧本');
     }catch(err){
       alert('无法识别这个 HTML。请确认它是由本工具导出的纯查看版 HTML。');
     }finally{
