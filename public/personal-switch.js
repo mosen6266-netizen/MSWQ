@@ -6,10 +6,117 @@
 
  const strip=document.getElementById('mswqPersonalSwitch');
  if(!strip||!location.pathname.startsWith('/view/'))return;
+ const embedded=new URLSearchParams(location.search).get('embedded')==='1'&&window.parent!==window;
  const originalTabs=document.getElementById('flowTabs');
  const currentSlug=decodeURIComponent(location.pathname.slice('/view/'.length));
  const warm=new Set();
  let signature='',inflight=null,currentFlows=[],prefetchTimer=0,leaving=false;
+ // The top-level reader remains alive; at most two other full readers stay
+ // mounted in same-origin frames, eliminating costly HTML/JS re-parsing when
+ // the user alternates between their three frequent flows.
+ const frames=new Map();
+ let activeSlug=currentSlug,frameClock=0;
+ let switchNotice=null;
+
+ function notice(show){
+  if(!show){switchNotice?.remove();switchNotice=null;return;}
+  if(!switchNotice){
+   const node=document.createElement('div');
+   node.setAttribute('role','status');
+   node.textContent='正在打开个人流程…';
+   node.style.cssText='position:fixed;inset:0;z-index:2147483001;display:flex;align-items:center;justify-content:center;background:rgba(17,18,20,.83);color:#efefed;font:700 15px system-ui,"Microsoft YaHei",sans-serif';
+   switchNotice=node;
+   document.body.appendChild(node);
+  }
+ }
+
+ function reveal(slug){
+  if(embedded)return;
+  for(const [key,entry] of frames){
+   entry.iframe.style.display=key===slug&&entry.loaded?'block':'none';
+   if(key===slug)entry.lastUsed=++frameClock;
+  }
+  const showFrame=slug!==currentSlug;
+  const pane=frames.get(slug);
+  notice(showFrame&&!pane?.loaded);
+ }
+
+ function trimFrames(){
+  if(frames.size<=2)return;
+  const candidates=[...frames.entries()].filter(([slug])=>slug!==activeSlug)
+   .sort((a,b)=>a[1].lastUsed-b[1].lastUsed);
+  while(frames.size>2&&candidates.length){
+   const [slug,entry]=candidates.shift();
+   entry.iframe.remove();frames.delete(slug);
+  }
+ }
+
+ function showFlow(item){
+  if(embedded||!item||!item.slug||item.slug===activeSlug)return;
+  const href=flowHref(item);
+  const next=item.slug;
+  activeSlug=next;
+  // replaceState only changes this existing entry, never pushes another
+  // "flow" into the user's Back history.
+  window.history.replaceState(history.state,'',href);
+  if(next!==currentSlug){
+   let entry=frames.get(next);
+   if(entry&&entry.href!==href){
+    entry.iframe.remove();frames.delete(next);entry=null;
+   }
+   if(!entry){
+    const frame=document.createElement('iframe');
+    frame.title=item.title||'个人流程';
+    frame.setAttribute('aria-label',item.title||'个人流程');
+    frame.style.cssText='position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;z-index:2147483000;border:0;display:none;background:#121315';
+    const src=new URL(href,location.origin);
+    src.searchParams.set('embedded','1');
+    entry={iframe:frame,href,loaded:false,lastUsed:++frameClock};
+    frames.set(next,entry);
+    frame.addEventListener('load',()=>{
+     try{
+      // Ignore the iframe's first empty about:blank load.
+      if(frame.contentWindow.location.pathname!==src.pathname)return;
+      if(new URL(frame.contentWindow.location.href).searchParams.get('embedded')!=='1')return;
+      entry.loaded=true;
+      if(activeSlug===next)reveal(next);
+      trimFrames();
+     }catch(error){console.warn('MSWQ frame load:',error.message)}
+    });
+    document.body.appendChild(frame);
+    // Replace the initial about:blank frame history entry so that subframe
+    // loading cannot become a browser Back destination.
+    frame.contentWindow.location.replace(src.href);
+   }
+  }
+  reveal(next);
+  trimFrames();
+ }
+
+ if(embedded){
+  // The parent owns browser history and retains the already loaded readers.
+  // Prevent a child frame's 返回 button from navigating iframe history.
+  document.addEventListener('click',event=>{
+   const a=event.target.closest('[data-mswq-home="true"],[data-mswq-back="true"]');
+   if(!a)return;
+   event.preventDefault();event.stopImmediatePropagation();
+   window.parent.postMessage({type:'MSWQ_PERSONAL_RETURN'},location.origin);
+  },true);
+ }else{
+  window.addEventListener('message',event=>{
+   if(event.origin!==location.origin)return;
+   if(![...frames.values()].some(entry=>entry.iframe.contentWindow===event.source))return;
+   if(event.data?.type==='MSWQ_PERSONAL_RETURN'){
+    if(window.history.length>1)window.history.back();
+    else window.location.assign('/');
+    return;
+   }
+   if(event.data?.type==='MSWQ_PERSONAL_SWITCH'){
+    const item=currentFlows.find(x=>x.slug===event.data.slug);
+    if(item)showFlow(item);
+   }
+  });
+ }
 
  function flowHref(item){
   // The item version changes whenever the published item is saved.
@@ -98,20 +205,21 @@
   return inflight;
  }
 
- // Use replace() instead of assign()/ordinary anchor navigation.
- // This preserves exactly one flow history entry no matter how many times
- // the user switches. The native browser Back and original 返回 button both
- // go to the page visited BEFORE the flow section.
+ // Keep browser history untouched. Parent switches cached complete readers
+ // instantly, while a reader inside an iframe delegates its clicks upward.
  strip.addEventListener('click',event=>{
   const link=event.target.closest('a.mswq-personal-link');
   if(!link||event.defaultPrevented||event.button!==0||
      event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;
   event.preventDefault();
-  if(link.getAttribute('aria-current')==='page'||leaving)return;
-  leaving=true;
-  // The switch is visible immediately even if the large HTML is still loading.
-  link.setAttribute('aria-busy','true');
-  window.location.replace(link.href);
+  const clicked=new URL(link.href);
+  const slug=decodeURIComponent(clicked.pathname.slice('/view/'.length));
+  if(embedded){
+   if(slug!==currentSlug)window.parent.postMessage({type:'MSWQ_PERSONAL_SWITCH',slug},location.origin);
+   return;
+  }
+  const item=currentFlows.find(x=>x.slug===slug);
+  if(item)showFlow(item);
  });
 
  // Fetch sooner on actual pointer intent, even if the background prefetch
