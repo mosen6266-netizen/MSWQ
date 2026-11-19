@@ -6,14 +6,14 @@ const $=selector=>document.querySelector(selector);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlOk=x=>{try{return ['http:','https:'].includes(new URL(x,location.origin).protocol)}catch{return false}};
 const asset=id=>id?'/api/asset/'+encodeURIComponent(id):'';
-const builtinTypes={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具'};
+const builtinTypes={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具',bookmarks:'网址收藏',profile:'个人名片'};
 const typeNames={...builtinTypes};
 function applyCustomTypes(settings){
  for(const key of Object.keys(typeNames))if(!(key in builtinTypes))delete typeNames[key];
  for(const t of settings?.custom_types||[])if(/^custom_[a-f0-9]{32}$/.test(t.id))typeNames[t.id]=t.name;
 }
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
-const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false};
+const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library'};
 let toastTimer;
 function toast(t){const n=$('#toast');n.textContent=t;n.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.classList.remove('show'),2600)}
 async function api(path,opts={}){
@@ -25,7 +25,7 @@ async function api(path,opts={}){
 const jsonBody=data=>({headers:{'content-type':'application/json'},body:JSON.stringify(data)});
 const fmt=x=>x?new Date(x).toLocaleDateString('zh-CN'):'';
 const slug=x=>(x||'').trim()||'new-page';
-function typeIcon(k){return {personal:'☷',group:'☰',document:'▤',page:'▦',link:'↗'}[k]||'▤'}
+function typeIcon(k){return {personal:'☷',group:'☰',document:'▤',page:'▦',link:'↗',bookmarks:'▣',profile:'◈'}[k]||'▤'}
 function row(title,description,contents){return '<div class="admin-panel"><div class="panel-head"><div><h2>'+esc(title)+'</h2>'+(description?'<div class="muted small">'+esc(description)+'</div>':'')+'</div></div>'+contents+'</div>'}
 function controls(buttons){return '<div class="flex end">'+buttons+'</div>'}
 function field(name,value,prop,placeholder='',kind='input'){
@@ -136,13 +136,13 @@ async function loadAdmin(){
  S.items=data.items;S.settings=settings.settings;applyCustomTypes(S.settings);
 }
 function sideNav(){
- const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
- return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&x[0]==='library'?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>测试模式 · 免密码进入</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a></div></div></aside>';
+ const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['bookmarks','▣','网址收藏'],['profile','◈','个人名片'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
+ return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&S.returnTab===x[0]?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>测试模式 · 免密码进入</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a></div></div></aside>';
 }
 function adminRender(){
- const heading={dashboard:'后台总览',library:'内容管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
- const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
- const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="library">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
+ const heading={dashboard:'后台总览',library:'内容管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
+ const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接及图片',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
+ const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
  // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
   const isDocx=S.tab==='legacy-docx';
@@ -157,7 +157,13 @@ function adminPanel(){
  if(S.tab==='dashboard'){
   const published=S.items.filter(x=>x.status==='published').length;
   const draft=S.items.length-published;
-  return '<div class="stats"><div class="stat"><span>全部内容</span><strong>'+S.items.length+'</strong></div><div class="stat"><span>已发布</span><strong>'+published+'</strong></div><div class="stat"><span>草稿</span><strong>'+draft+'</strong></div><div class="stat"><span>内容类型</span><strong>5</strong></div></div>'+row('快捷管理','创建内容后可独立生成公开链接','<div class="flex" style="flex-wrap:wrap"><button class="btn primary" data-action="new-item">＋ 新建流程 / 页面</button><button class="btn" data-action="tab" data-id="import">导入旧编辑器备份</button><button class="btn" data-action="tab" data-id="assets">上传图片或文件</button><a class="btn" href="/" target="_blank">查看公开首页</a></div>')+row('使用顺序','', '<div class="stack muted">① 在内容管理中创建个人流程、群剧本或页面 → ② 添加步骤、按钮、附件 → ③ 保存草稿并预览 → ④ 发布并复制公开链接。<br>DOCX 模块可以创建文档入口，暂时沿用原有 MS_KHMB 服务，不会修改其数据。</div>');
+  return '<div class="stats"><div class="stat"><span>全部内容</span><strong>'+S.items.length+'</strong></div><div class="stat"><span>已发布</span><strong>'+published+'</strong></div><div class="stat"><span>草稿</span><strong>'+draft+'</strong></div><div class="stat"><span>内容类型</span><strong>'+Object.keys(typeNames).length+'</strong></div></div>'+row('快捷管理','创建内容后可独立生成公开链接','<div class="flex" style="flex-wrap:wrap"><button class="btn primary" data-action="new-item">＋ 新建流程 / 页面</button><button class="btn" data-action="tab" data-id="import">导入旧编辑器备份</button><button class="btn" data-action="tab" data-id="assets">上传图片或文件</button><a class="btn" href="/" target="_blank">查看公开首页</a></div>')+row('使用顺序','', '<div class="stack muted">① 在内容管理中创建个人流程、群剧本或页面 → ② 添加步骤、按钮、附件 → ③ 保存草稿并预览 → ④ 发布并复制公开链接。<br>DOCX 模块可以创建文档入口，暂时沿用原有 MS_KHMB 服务，不会修改其数据。</div>');
+ }
+ if(S.tab==='bookmarks'||S.tab==='profile'){
+  const kind=S.tab,rows=S.items.filter(x=>x.kind===kind);
+  return row(kind==='profile'?'个人名片':'网址收藏夹',kind==='profile'?'不预设任何个人资料字段；标签与内容由你自己添加':'收藏多个网站，随时更改名称、网址、备注和排序',
+   '<div class="flex" style="flex-wrap:wrap;margin-bottom:16px"><button class="btn green" data-action="new-special" data-id="'+kind+'">＋ 新建'+(kind==='profile'?'个人名片':'网址收藏夹')+'</button><span class="muted small">'+rows.length+' 个</span></div>'+
+   (rows.length?'<div class="special-list">'+rows.map(x=>'<div class="special-list-item"><div><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc(x.slug)+' · '+(x.status==='published'?'已发布':'草稿')+'</div></div><div class="flex" style="flex-wrap:wrap"><button class="btn sm" data-action="edit-item" data-id="'+x.id+'">编辑</button><button class="btn sm" data-action="copy-url" data-id="'+x.id+'">复制链接</button><button class="btn sm" data-action="quick-status" data-id="'+x.id+'">'+(x.status==='published'?'下架':'发布')+'</button></div></div>').join('')+'</div>':'<div class="empty">还没有内容，点击「新建」开始添加</div>'));
  }
  if(S.tab==='library'){
   return row('内容列表','修改排序数字可调整公开首页的显示顺序','<div class="flex" style="margin-bottom:14px"><input id="adminSearch" class="input" placeholder="查找内容名称、分类、标签…" value="'+esc(S.search)+'"></div><div style="overflow:auto"><table class="admin-table"><thead><tr><th>标题 / 路径</th><th>类型</th><th>状态</th><th>排序</th><th>最后更新</th><th style="text-align:right">操作</th></tr></thead><tbody>'+S.items.filter(x=>(x.title+' '+x.slug+' '+x.category).toLowerCase().includes(S.search.toLowerCase())).map(x=>'<tr><td><strong>'+esc(x.title)+'</strong><div class="tiny muted truncate">/view/'+esc(x.slug)+'</div></td><td>'+esc(typeNames[x.kind])+'</td><td><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></td><td>'+x.sort_order+'</td><td class="small muted">'+fmt(x.updated_at)+'</td><td><div class="actions"><button class="btn sm" data-action="edit-item" data-id="'+x.id+'">编辑</button><button class="btn sm" data-action="copy-url" data-id="'+x.id+'">链接</button><button class="btn sm" data-action="quick-status" data-id="'+x.id+'">'+(x.status==='published'?'下架':'发布')+'</button></div></td></tr>').join('')+'</tbody></table></div>') ;
@@ -173,8 +179,11 @@ function adminPanel(){
 function blankBlock(type){
  return {id:crypto.randomUUID(),type,title:blockNames[type]||'新步骤',text:'',zh:'',en:'',seconds:60,speakerId:'',url:'',links:[],assetId:'',files:[]};
 }
-function newItem(){
- S.edit={id:null,version:0,kind:'personal',status:'draft',title:'新建个人流程',slug:'',description:'',category:'',tags:[],sort_order:1000,thumbnail:'',content:{blocks:[],members:[],keywords:[]}};
+function newItem(kind='personal'){
+ S.returnTab=kind==='bookmarks'?'bookmarks':kind==='profile'?'profile':'library';
+ const label=kind==='bookmarks'?'我的网址收藏':kind==='profile'?'个人名片':'新建个人流程';
+ const unique=['bookmarks','profile'].includes(kind)?kind+'-'+crypto.randomUUID().slice(0,8):'';
+ S.edit={id:null,version:0,kind,status:'draft',title:label,slug:unique,description:'',category:'',tags:[],sort_order:1000,thumbnail:'',content:{blocks:[],members:[],keywords:[],entries:[],fields:[]}};
  S.tab='editor';adminRender();
 }
 function editorHtml(){
