@@ -15,7 +15,7 @@ function fail(message,status=400){return out({ok:false,error:message},status);}
 function html(value,isLegacy=false){
   const csp=isLegacy
     ? "default-src 'self' data: blob:; script-src 'unsafe-inline' 'self' blob:; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'"
-    : "default-src 'self' data: blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-src https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+    : "default-src 'self' data: blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; frame-src 'self' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
   return new Response(value,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'strict-origin-when-cross-origin','content-security-policy':csp}});
 }
 // Only permit embedding standalone administrative tools in the same-origin MSWQ dashboard.
@@ -172,32 +172,9 @@ async function handler(req,env){
  // Compatibility for old template links mistakenly generated as /?template=<id>.
  // Serve the selected DOCX template in place, without redirecting to another page.
  if(method==='GET'&&p==='/'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return publicDocxPage(ASSETS.docx);
- // Serve published DOCX tools as a standalone full-viewport app.
- // Resolve this on the server: the route must work even when an older app.js is browser-cached.
- if(method==='GET'&&p.startsWith('/view/')){
-  let slug;
-  try{slug=decodeURIComponent(p.slice('/view/'.length));}catch{return fail('访问路径无效',400);}
-  const item=await env.DB.prepare("SELECT kind,content FROM items WHERE slug=? AND status='published'").bind(slug).first();
-  if(item?.kind==='document'){
-   let content;
-   try{content=JSON.parse(item.content||'{}');}catch{content={};}
-   const dest=new URL(content.docUrl||'/docx',url.origin);
-   if(!['https:','http:'].includes(dest.protocol))return fail('文档工作台链接无效',400);
-   if(dest.origin===url.origin&&(dest.pathname==='/docx'||dest.pathname==='/docx/')){
-    // No redirect: the published /view/<slug> URL itself serves the entire DOCX application.
-    const requestedTemplate=url.searchParams.get('template')||content.templateId||dest.searchParams.get('template')||'';
-    const sourceLine="const requested=new URLSearchParams(window.location.search).get('template');";
-    const replacementLine="const requested=new URLSearchParams(window.location.search).get('template')||"+JSON.stringify(String(requestedTemplate))+";";
-    if(!ASSETS.docx.includes(sourceLine))return fail('文档模板入口暂时不可用',503);
-    return publicDocxPage(ASSETS.docx.replace(sourceLine,replacementLine));
-   }
-   // External DOCX providers still open in their own tab from a document card.
-   if(content.templateId)dest.searchParams.set('template',String(content.templateId));
-   return new Response(null,{status:302,headers:{'location':dest.href,'cache-control':'no-store, max-age=0','x-content-type-options':'nosniff'}});
-  }
-  return html(ASSETS.html);
- }
- if(method==='GET'&&(p==='/'||p==='/admin'||p==='/admin/'))return html(ASSETS.html);
+ // Render all published content within the MSWQ shell; the frontend selects the
+ // full-width embedded DOCX view without redirecting or creating another tab.
+ if(method==='GET'&&(p==='/'||p==='/admin'||p==='/admin/'||p.startsWith('/view/')))return html(ASSETS.html);
  if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/legacy-bridge.js')return new Response(ASSETS.bridge,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
@@ -214,7 +191,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.7',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.8',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
