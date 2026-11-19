@@ -45,7 +45,7 @@ function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
 async function showHome(){
  document.title='MSWQ · 内容与工具中心';S.preview=false;
  root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
- try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);homeRender();}
+ try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);S.filter=orderedCategoryIds(S.settings).find(k=>!(S.settings.hidden_types||[]).includes(k))||'all';if(S.filter==='bookmarks'){try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}}homeRender();}
  catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
 }
 async function loadPublicBookmarks(){
@@ -62,8 +62,8 @@ async function loadPublicBookmarks(){
  try{await S.bookmarksPromise}finally{S.bookmarksPromise=null;}
 }
 function homeRender(){
- const c=S.settings||{},types=['all',...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k)))];
- if(S.filter!=='all'&&!types.includes(S.filter))S.filter='all';
+ const c=S.settings||{},types=[...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k))),'all'];
+ if(!types.includes(S.filter))S.filter=types[0]||'all';
  const matching=text=>String(text||'').toLowerCase().includes(S.search.toLowerCase());
  const items=S.items.filter(x=>(S.filter==='all'||(x.kind==='document'?(x.category||'document'):x.kind)===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
  const isBookmarkTab=S.filter==='bookmarks';
