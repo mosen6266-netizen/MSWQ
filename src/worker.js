@@ -154,6 +154,11 @@ async function serveAsset(env,id){
  const filename=encodeURIComponent(row.name);
  return new Response(obj.body,{headers:{'content-type':type,'content-length':String(row.size),'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'content-disposition':(imageMime(row.mime)?'inline':'attachment')+"; filename*=UTF-8''"+filename,'cache-control':'public,max-age=86400'}});
 }
+function publicDocxPage(value){
+ const response=html(value,true),headers=new Headers(response.headers);
+ headers.set('content-security-policy',"default-src 'self' data: blob:; script-src 'unsafe-inline' 'self' blob:; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'");
+ return new Response(value,{status:200,headers});
+}
 async function handler(req,env){
  const url=new URL(req.url),p=url.pathname,method=req.method;
  // Serve published DOCX tools as a standalone full-viewport app.
@@ -167,6 +172,15 @@ async function handler(req,env){
    try{content=JSON.parse(item.content||'{}');}catch{content={};}
    const dest=new URL(content.docUrl||'/docx',url.origin);
    if(!['https:','http:'].includes(dest.protocol))return fail('文档工作台链接无效',400);
+   if(dest.origin===url.origin&&(dest.pathname==='/docx'||dest.pathname==='/docx/')){
+    // No redirect: the published /view/<slug> URL itself serves the entire DOCX application.
+    const requestedTemplate=url.searchParams.get('template')||content.templateId||dest.searchParams.get('template')||'';
+    const sourceLine="const requested=new URLSearchParams(window.location.search).get('template');";
+    const replacementLine="const requested=new URLSearchParams(window.location.search).get('template')||"+JSON.stringify(String(requestedTemplate))+";";
+    if(!ASSETS.docx.includes(sourceLine))return fail('文档模板入口暂时不可用',503);
+    return publicDocxPage(ASSETS.docx.replace(sourceLine,replacementLine));
+   }
+   // External DOCX providers still open in their own tab from a document card.
    if(content.templateId)dest.searchParams.set('template',String(content.templateId));
    return new Response(null,{status:302,headers:{'location':dest.href,'cache-control':'no-store, max-age=0','x-content-type-options':'nosniff'}});
   }
@@ -176,11 +190,7 @@ async function handler(req,env){
  if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/legacy-bridge.js')return new Response(ASSETS.bridge,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
- if(method==='GET'&&(p==='/docx'||p==='/docx/')){
-  const response=html(ASSETS.docx,true),heads=new Headers(response.headers);
-  heads.set('content-security-policy',"default-src 'self' data: blob:; script-src 'unsafe-inline' 'self' blob:; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'");
-  return new Response(ASSETS.docx,{status:200,headers:heads});
- }
+ if(method==='GET'&&(p==='/docx'||p==='/docx/'))return publicDocxPage(ASSETS.docx);
  if(method==='GET'&&p==='/api/docx/session')return out({admin:false});
  if(p.startsWith('/api/docx/')){
   if(method!=='GET')return fail('公开文档服务不支持管理操作',405);
@@ -193,7 +203,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.3',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.4',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
