@@ -1,5 +1,6 @@
 /* MSWQ-owned test adaptation of MS_KHMB document API. Do not deploy separately. */
 (()=>{
+const MAX_SIZE=8*1024*1024;
 const RESP_HEADERS={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const respond=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{...RESP_HEADERS,'Content-Type':'application/json; charset=utf-8'}});
 const error=(message,status=400)=>respond({error:message},status);
