@@ -129,6 +129,14 @@ function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
  const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',editor:'编辑完成后可以保存草稿或直接发布',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
  const action=S.tab==='library'?'<button class="btn primary" data-action="new-item">＋ 新建内容</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="library">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
+ // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
+ if(S.tab==='legacy'||S.tab==='legacy-docx'){
+  const isDocx=S.tab==='legacy-docx';
+  const src=isDocx?'/admin/docx-editor':'/admin/legacy-editor';
+  const label=isDocx?'DOCX 模板后台':'原版流程编辑器';
+  root.innerHTML='<div class="admin-layout admin-layout--tool">'+sideNav()+'<main class="admin-main admin-main--tool"><iframe class="admin-tool-frame" title="'+label+'" src="'+src+'" loading="eager" referrerpolicy="same-origin"></iframe></main></div>';
+  return;
+ }
  root.innerHTML='<div class="admin-layout">'+sideNav()+'<main class="admin-main"><header class="admin-head"><div><h1>'+heading+'</h1><p>'+summary+'</p></div><div class="flex">'+action+'</div></header><div class="admin-content" id="adminPanel">'+adminPanel()+'</div></main></div>';
 }
 function adminPanel(){
@@ -144,8 +152,8 @@ function adminPanel(){
  if(S.tab==='assets')return assetsHtml();
  if(S.tab==='settings')return settingsHtml();
  if(S.tab==='import')return importHtml();
- if(S.tab==='legacy-docx')return row('DOCX 模板管理工作台','从 MSWQ 的受保护后台进入原有 DOCX 编辑器。该旧工具仍有自己的管理员密码，首次进入需要再验证一次。','<div class="notice">公开 DOCX 页面已经隐藏旧管理员入口，且仅代理模板读取接口。这里是单独受保护的管理入口。</div><p>可以维护原有 DOCX 模板：上传、替换、删除、排序、编辑占位内容、设置输出文件名等。更改仍保存到原 MS_KHMB 服务，不会复制或迁移原始数据。</p><a class="btn primary" href="/admin/docx-editor" target="_blank" rel="noopener">进入 DOCX 管理器 ↗</a>');
- if(S.tab==='legacy')return row('原版个人流程 / 群剧本编辑器','仅管理员可以打开，编辑后的原版备份可在 MSWQ 导入发布','<p>保留原工具的双语话术、提示导航、成员管理、查找替换、查看版导出和原有本地编辑体验。</p><p class="warning">首次从本机旧地址迁移数据，需要先导入原有 JSON 备份。之后在此后台打开编辑器，点击「发布到 MSWQ」即可把当前流程保存为草稿或直接发布。</p><a class="btn primary" href="/admin/legacy-editor" target="_blank" rel="noopener">打开完整原版编辑器 ↗</a>');
+
+
  return '';
 }
 function blankBlock(type){
