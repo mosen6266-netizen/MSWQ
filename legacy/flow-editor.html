@@ -1039,42 +1039,132 @@ function normalizeDB(parsed){
   return parsed;
 }
 function load(){
-  try{
-    const raw=localStorage.getItem(KEY);
-    if(!raw)return makeDefaultDB();
-    return normalizeDB(JSON.parse(raw));
-  }catch{
-    return makeDefaultDB();
-  }
+ try{
+  const raw=localStorage.getItem(KEY);
+  return raw?normalizeDB(JSON.parse(raw)):makeDefaultDB();
+ }catch{return makeDefaultDB();}
 }
 let db=normalizeDB(load()), selectedScriptId=null, selectedMemberId='all', selectedStepId=null, editingMemberId=null, saveTimer=null, storageErrorShown=false;
 let composerActorId=null, composerDraftZh='', composerDraftForeign='', composerPendingFile=null, composerEditingId=null;
 let selectedSpeechId=null;
 
-// The MSWQ publishing bridge must read the live editor state. Imported HTML
-// appears in this list before the browser's debounced localStorage write,
-// and large embedded attachments can cause that write to exceed its quota.
-window.mswqGetLiveGroupScripts=()=>db.scripts;
-window.mswqSaveGroupScriptsNow=()=>persistNow(false);
-
-function persistNow(silent=false){
-  clearTimeout(saveTimer);saveTimer=null;
-  try{
-    localStorage.setItem(KEY,JSON.stringify(db));
-    storageErrorShown=false;
-    return true;
-  }catch(err){
-    console.error('保存失败',err);
-    if(!silent&&!storageErrorShown){storageErrorShown=true;toast('自动保存失败：浏览器存储空间可能已满，请先导出编辑备份')}
-    return false;
-  }
+// Store editable scripts in IndexedDB, beyond localStorage's small quota.
+// Previously published scripts can also be restored from the original HTML on R2.
+const GROUP_IDB='MSWQEditableGroupArchiveV1',GROUP_STORE='snapshots';
+let gWriteQueue=Promise.resolve(),gLastStore=null,gStorageReady=null,gTouchedSinceBoot=false;
+function gOpenArchive(){
+ if(gStorageReady)return gStorageReady;
+ gStorageReady=new Promise((resolve,reject)=>{
+  if(!window.indexedDB){reject(new Error('当前浏览器不支持 IndexedDB'));return;}
+  const request=indexedDB.open(GROUP_IDB,1);
+  request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(GROUP_STORE))request.result.createObjectStore(GROUP_STORE)};
+  request.onerror=()=>reject(request.error||new Error('无法打开剧本数据库'));
+  request.onsuccess=()=>resolve(request.result);
+ });
+ return gStorageReady;
 }
+async function gReadArchive(){
+ const idb=await gOpenArchive();
+ return new Promise((resolve,reject)=>{
+  const tx=idb.transaction(GROUP_STORE,'readonly'),rq=tx.objectStore(GROUP_STORE).get('all');
+  rq.onsuccess=()=>resolve(rq.result||null);
+  rq.onerror=()=>reject(rq.error||new Error('读取剧本数据库失败'));
+ });
+}
+async function gWriteArchive(json){
+ const idb=await gOpenArchive();
+ return new Promise((resolve,reject)=>{
+  const tx=idb.transaction(GROUP_STORE,'readwrite');
+  tx.objectStore(GROUP_STORE).put({savedAt:JSON.parse(json).mswqSavedAt||0,json},'all');
+  tx.oncomplete=()=>resolve(true);
+  tx.onerror=()=>reject(tx.error||new Error('剧本写入失败'));
+  tx.onabort=()=>reject(tx.error||new Error('剧本写入中断'));
+ });
+}
+function gQueueArchive(json){
+ const queued=gWriteQueue.catch(()=>{}).then(()=>gWriteArchive(json));
+ gWriteQueue=queued;
+ queued.catch(err=>console.warn('群剧本本地归档保存失败',err));
+ return queued;
+}
+window.mswqGetLiveGroupScripts=()=>db.scripts;
+window.mswqWhenGroupReady=()=>gEditorBoot;
+function persistNow(silent=false){
+ clearTimeout(saveTimer);saveTimer=null;
+ db.mswqSavedAt=Date.now();
+ const json=JSON.stringify(db);
+ let localOk=false;
+ try{localStorage.setItem(KEY,json);localOk=true;storageErrorShown=false}
+ catch(err){console.warn('localStorage 容量不足，改用 IndexedDB 存储',err)}
+ const pending=gQueueArchive(json);gLastStore=pending;
+ if(!localOk&&!silent){
+  pending.then(()=>{if(!storageErrorShown){storageErrorShown=true;toast('已保存到大容量剧本库，本地旧存储空间已满')}})
+   .catch(()=>{if(!storageErrorShown){storageErrorShown=true;toast('剧本保存失败，请立即导出编辑备份')}});
+ }
+ return localOk;
+}
+async function gFlushDurable(){
+ const localOk=persistNow(true);
+ try{await gLastStore;return true}
+ catch(err){console.error('群剧本持久化失败',err);if(!localOk)toast('本机剧本存储失败，请导出编辑备份');return localOk}
+}
+window.mswqSaveGroupScriptsNow=()=>persistNow(false);
+window.mswqSaveGroupScriptsDurably=()=>gFlushDurable();
 function save(){
-  clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>persistNow(false),120);
+ gTouchedSinceBoot=true;
+ clearTimeout(saveTimer);
+ saveTimer=setTimeout(()=>persistNow(false),120);
 }
 window.addEventListener('pagehide',()=>persistNow(true));
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistNow(true)});
+
+// Restore the newest local archive, then pull any missing edited scripts from
+// the exact original exported HTML already saved by the MSWQ publishing process.
+async function gRestoreFromCloud(){
+ try{
+  const listing=await fetch('/api/admin/items',{cache:'no-store',credentials:'same-origin'});
+  if(!listing.ok)return 0;
+  const data=await listing.json();
+  let restored=0;
+  for(const item of data.items||[]){
+   if(item.kind!=='group'||!item.slug||!item.id)continue;
+   const publishedId=String(item.slug).startsWith('group-')?String(item.slug).slice(6):'';
+   const removed=Array.isArray(db.mswqDeletedGroupIds)?db.mswqDeletedGroupIds:[];
+   if(removed.includes(publishedId)||db.scripts.some(x=>x.id===publishedId||'group-'+String(x.id).replace(/[^a-zA-Z0-9_-]/g,'-')===item.slug))continue;
+   try{
+    const res=await fetch('/api/admin/items/'+encodeURIComponent(item.id)+'/export-html',{cache:'no-store',credentials:'same-origin'});
+    if(!res.ok)continue;
+    const raw=extractReaderData(await res.text());
+    if(!raw||!raw.id||!Array.isArray(raw.steps)||!Array.isArray(raw.members))continue;
+    if(removed.includes(String(raw.id))||db.scripts.some(s=>s.id===raw.id))continue;
+    const normalized=normalizeDB({scripts:[raw]}).scripts[0];
+    if(!normalized)continue;
+    db.scripts.push(normalized);restored++;
+   }catch(e){console.warn('云端群剧本恢复失败',item.slug,e)}
+  }
+  if(restored){
+   gTouchedSinceBoot=true;
+   await gFlushDurable();
+   render();
+   toast('已从 MSWQ 云端恢复 '+restored+' 套群剧本，刷新后仍然保留');
+  }
+  return restored;
+ }catch(e){console.warn('读取云端群剧本失败，可稍后刷新重试',e);return 0}
+}
+async function gRestoreEditor(){
+ try{
+  const archive=await gReadArchive();
+  if(archive?.json&&!gTouchedSinceBoot){
+   const restored=normalizeDB(JSON.parse(archive.json));
+   if((Number(archive.savedAt)||0)>(Number(db.mswqSavedAt)||0)&&Array.isArray(restored.scripts)){
+    db=restored;render();
+   }
+  }
+ }catch(e){console.warn('从本机归档恢复失败，将尝试云端备份',e)}
+ await gRestoreFromCloud();
+ return true;
+}
+let gEditorBoot=null;
 function current(){return db.scripts.find(s=>s.id===selectedScriptId)||null}
 function memberById(id){return current()?.members.find(m=>m.id===id)||null}
 function stepById(id){return current()?.steps.find(s=>s.id===id)||null}
@@ -1793,6 +1883,7 @@ function confirmDeleteScript(){
   if(!id)return;
   const before=db.scripts.length;
   db.scripts=db.scripts.filter(x=>x.id!==id);
+  if(db.scripts.length!==before){if(!Array.isArray(db.mswqDeletedGroupIds))db.mswqDeletedGroupIds=[];if(!db.mswqDeletedGroupIds.includes(id))db.mswqDeletedGroupIds.push(id)}
   if(db.scripts.length===before){closeModal('deleteScriptModal');return}
   selectedScriptId=null;selectedMemberId='all';selectedStepId=null;composerEditingId=null;composerActorId=null;composerDraftZh='';composerDraftForeign='';composerPendingFile=null;
   closeModal('deleteScriptModal');save();render();toast('剧本已删除');
@@ -1876,15 +1967,15 @@ function normalizeImportedScript(raw){
 }
 function importReaderHtml(file){
   const r=new FileReader();
-  r.onload=()=>{
+  r.onload=async()=>{
     try{
       const raw=extractReaderData(String(r.result||''));
       const script=normalizeImportedScript(raw);
       db.scripts.push(script);
       selectedScriptId=script.id;selectedMemberId='all';selectedStepId=null;
-      const locallySaved=persistNow(false);
       render();
-      toast(locallySaved?'查看版 HTML 已导入，可在发布菜单选择此剧本':'已导入当前编辑器，但本地存储空间不足：请先备份，仍可在发布菜单选择此剧本');
+      const saved=await gFlushDurable();
+      toast(saved?'查看版 HTML 已固定保存到剧本库，刷新后仍保留':'剧本已加载但本机保存失败，请先导出编辑备份再刷新');
     }catch(err){
       alert('无法识别这个 HTML。请确认它是由本工具导出的纯查看版 HTML。');
     }finally{
@@ -2303,7 +2394,7 @@ function gReplaceJump(index){
   input.addEventListener('input',gReplaceClearMark,{once:true});update();
  });
 }
-function gReplaceApply(){
+async function gReplaceApply(){
  const plan=gReplacePlan(),sc=plan.script;
  if(!sc||sc.id!==selectedScriptId||!plan.needle||!plan.changes.length)return gReplacePreview();
  for(const c of plan.changes){
@@ -2311,7 +2402,7 @@ function gReplaceApply(){
   if(!step||String(step[c.field]??'')!==c.before){toast('剧本内容已变化，请重新预览');return gReplacePreview();}
  }
  for(const c of plan.changes)sc.steps.find(s=>s.id===c.stepId)[c.field]=c.after;
- if(!persistNow(false)){
+ if(!await gFlushDurable()){
   for(const c of plan.changes)sc.steps.find(s=>s.id===c.stepId)[c.field]=c.before;
   toast('保存失败，已撤销本次替换。请检查本地存储空间');return;
  }
@@ -2347,6 +2438,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.
 document.querySelectorAll('.modal').forEach(m=>m.onclick=e=>{if(e.target===m)closeModal(m.id)});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal.show').forEach(m=>m.classList.remove('show'))});
 render();
+gEditorBoot=gRestoreEditor();
 </script>
 <script>
 /* 独立的个人流程话术管理模块。不会读取或写入 groupScriptManager.v6。 */
