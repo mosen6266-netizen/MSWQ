@@ -163,6 +163,9 @@ async function openAdmin(){
   await api('/api/admin/me');
   S.admin=true;
   await loadAdmin();
+  const initialTab=new URLSearchParams(location.search).get('tab');
+  if(['dashboard','library','bookmarks','profile','assets','settings','import','legacy','legacy-docx'].includes(initialTab))S.tab=initialTab;
+  if(initialTab==='assets')await loadAssets();
   adminRender();
  }catch(err){
   S.admin=false;
@@ -353,6 +356,7 @@ async function perform(action,id,el){
  case 'back-edit':S.tab='editor';S.preview=false;adminRender();break;
  case 'tab':{
   S.tab=id;S.edit=null;
+  if(location.pathname==='/admin')history.replaceState(null,'',id==='dashboard'?'/admin':'/admin?tab='+encodeURIComponent(id));
   if(id==='assets')await loadAssets();
   adminRender();break;
  }
