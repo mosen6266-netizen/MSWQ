@@ -559,14 +559,18 @@ case 'retry-bookmarks':{
   const name=($('#quickDocxTitle')?.value||'').trim(),templateId=$('#quickDocxTemplate')?.value||'';
   if(!name)return toast('请填写前台名称，例如：制作文件');
   if(!S.docxTemplates.some(t=>t.id===templateId))return toast('请从现有模板中选择一个文件');
+  let category=$('#quickDocxCategory')?.value||'';
+  if(category==='__new_category__'&&!($('#quickDocxNewCategoryName')?.value||'').trim())return toast('请填写新分类名称');
+  if(category!=='__new_category__'&&(!orderedCategoryIds(S.settings).includes(category)||(S.settings?.hidden_types||[]).includes(category)))return toast('请选择前台可显示的分类');
   const btn=el;btn.disabled=true;btn.textContent='正在发布…';
   try{
-   if((S.settings?.deleted_types||[]).includes('document')){
-    const restored=await api('/api/admin/types/restore',{method:'PUT',...jsonBody({id:'document'})});
-    S.settings.deleted_types=restored.deleted_types;S.settings.hidden_types=restored.hidden_types;S.settings.type_order=restored.type_order;
+   if(category==='__new_category__'){
+    const createdType=await api('/api/admin/types',{method:'POST',...jsonBody({name:$('#quickDocxNewCategoryName').value.trim()})});
+    S.settings.custom_types=createdType.custom_types;S.settings.type_order=createdType.type_order;applyCustomTypes(S.settings);
+    category=createdType.type.id;
    }
    const item={kind:'document',status:'published',title:name,slug:'docx-'+crypto.randomUUID().replace(/-/g,'').slice(0,16),
-    description:'',category:'',tags:[],sort_order:1000,thumbnail:'',
+    description:'',category,tags:[],sort_order:1000,thumbnail:'',
     content:{docUrl:'/docx',templateId,blocks:[],members:[]}};
    const created=await api('/api/admin/items',{method:'POST',...jsonBody(item)});
    await loadAdmin();S.tab='library';adminRender();
@@ -749,10 +753,7 @@ async function saveCurrent(publish){
   if(!S.docxTemplatesReady)await loadDocxTemplates();
   if(!S.docxTemplates.some(t=>t.id===item.content?.templateId))return toast('请选择一个现有 DOCX 模板');
   item.content.docUrl=item.content.docUrl||'/docx';
-  if((S.settings?.deleted_types||[]).includes('document')&&!item.id){
-   const restored=await api('/api/admin/types/restore',{method:'PUT',...jsonBody({id:'document'})});
-   S.settings.deleted_types=restored.deleted_types;S.settings.hidden_types=restored.hidden_types;S.settings.type_order=restored.type_order;
-  }
+  if(!orderedCategoryIds(S.settings).includes(item.category)||(S.settings?.hidden_types||[]).includes(item.category))return toast('请选择前台可显示的分类');
  }
  if(item.kind==='bookmarks'){
   const entries=item.content.entries||[];
@@ -861,6 +862,20 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',async e=>{
  const t=e.target;
+ if(t.id==='quickDocxCategory'){
+  const box=$('#quickDocxNewCategoryBox');
+  if(box){box.style.display=t.value==='__new_category__'?'block':'none';if(t.value==='__new_category__')$('#quickDocxNewCategoryName')?.focus()}
+  return;
+ }
+ if(t.id==='docxEditorCategory'&&t.value==='__new_category__'){
+  const previous=S.edit?.category||'';
+  const name=prompt('输入新的前台分类名称（最多30字）');
+  if(!name?.trim()){t.value=previous;return}
+  const created=await api('/api/admin/types',{method:'POST',...jsonBody({name:name.trim()})});
+  S.settings.custom_types=created.custom_types;S.settings.type_order=created.type_order;applyCustomTypes(S.settings);
+  S.edit.category=created.type.id;
+  adminRender();return;
+ }
  if(t.dataset.mediaUpload){
   const collection=t.dataset.mediaUpload,media=t.dataset.mediaKind==='video'?'video':'image',index=Number(t.dataset.index),file=t.files?.[0];
   if(!file||!S.edit||!['entries','fields'].includes(collection))return;
