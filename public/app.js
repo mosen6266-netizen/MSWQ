@@ -42,7 +42,7 @@ function field(name,value,prop,placeholder='',kind='input'){
  const v=esc(value||'');
  return '<div class="field"><label>'+esc(name)+'</label>'+(kind==='textarea'?'<textarea data-field="'+prop+'" placeholder="'+esc(placeholder)+'">'+v+'</textarea>':'<input data-field="'+prop+'" value="'+v+'" placeholder="'+esc(placeholder)+'">')+'</div>';
 }
-function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" data-mswq-back="true" aria-label="返回">← 返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
+function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" data-mswq-back="true" aria-label="返回">返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
 function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
 async function showHome(){
  document.title='MSWQ · 内容与工具中心';S.preview=false;
@@ -233,8 +233,8 @@ async function showReader(slugText,localItem=null){
  }else{
   body=blocks.map((b,i)=>blockRender(b,i,item)).join('')||'<div class="empty">尚无公开内容</div>';
  }
- root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" data-mswq-back="true" class="btn sm">← 返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid'+(nav?'':' reader-no-sidebar')+'"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main>'+(nav?'<aside class="reader-aside"><h3>绿色提示导航</h3>'+nav+'</aside>':'')+'</div></div>';
- }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" data-mswq-back="true" href="/">← 返回</a></p></div>'}
+ root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" data-mswq-back="true" class="btn sm">返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid'+(nav?'':' reader-no-sidebar')+'"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main>'+(nav?'<aside class="reader-aside"><h3>绿色提示导航</h3>'+nav+'</aside>':'')+'</div></div>';
+ }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" data-mswq-back="true" href="/">返回</a></p></div>'}
 }
 async function openAdmin(){
  root.innerHTML='<div class="loading center" style="padding:80px">正在加载测试后台…</div>';
