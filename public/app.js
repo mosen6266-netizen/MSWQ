@@ -195,7 +195,11 @@ async function showReader(slugText,localItem=null){
  document.title=item.title+' · MSWQ';
  const content=item.content||{},blocks=content.blocks||[];
  // Sidebar navigation mirrors only green hint bubbles; full script remains in the main reader.
- const nav=blocks.map((b,i)=>({b,i})).filter(({b})=>b.type==='hint').map(({b,i},n)=>'<button class="navlink hint" data-action="jump" data-id="'+esc(b.id||'b'+i)+'" title="'+esc(b.title||b.text||'绿色提示')+'">'+(n+1)+'. '+esc(b.title||b.text||'绿色提示')+'</button>').join('');
+ const nav=blocks.map((b,i)=>({b,i})).filter(({b})=>b.type==='hint').map(({b,i},n)=>{
+  const text=String(b.text||'').trim(),title=String(b.title||'').trim();
+  const label=text||(title&&title!=='绿色提示'?title:'绿色提示');
+  return '<button class="navlink hint" data-action="jump" data-id="'+esc(b.id||'b'+i)+'" title="'+esc(label)+'">'+(n+1)+'. '+esc(label)+'</button>';
+ }).join('');
  let body='';
  if(item.kind==='bookmarks'){root.innerHTML=bookmarksPublic(item,!!localItem);return;}
  if(item.kind==='profile'){root.innerHTML=profilePublic(item,!!localItem);return;}
