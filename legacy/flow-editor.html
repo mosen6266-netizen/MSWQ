@@ -1898,8 +1898,7 @@ function personalOfflineReaderMarkup(packed){
  return {tabs,body:cards||'<p class="muted">暂无流程</p>'};
 }
 
-function exportReader(){
-  const s=current();if(!s){alert('请先选择要导出的剧本');return}
+function mswqGroupReaderHtml(s){
   const payload=JSON.stringify(s).replace(/</g,'\\u003c');
   const reader=`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2120,7 +2119,11 @@ renderMembers();render();renderReaderNotes();renderReaderKeywords();renderReader
  for(const k of navKeys){const b=buttons[keys.indexOf(k)];if(!b)continue;b.hidden=(data.navDisabled||[]).includes(k);rTabs.appendChild(b)}
  const next=navKeys.find(k=>!(data.navDisabled||[]).includes(k)&&keys.includes(k));groupReaderSide(next||'none');
 <\/script></body></html>`;
-  dl((s.name||'剧本')+'-纯查看版.html',reader,'text/html;charset=utf-8');
+  return reader;
+}
+function exportReader(){
+  const s=current();if(!s){alert('请先选择要导出的剧本');return}
+  dl((s.name||'剧本')+'-纯查看版.html',mswqGroupReaderHtml(s),'text/html;charset=utf-8');
   toast('纯查看版 HTML 已导出');
 }
 
@@ -2846,6 +2849,16 @@ p$('pMergeSelectNone').addEventListener('click',()=>{pMergeSelected.clear();pMer
 p$('pMergeReaderExport').addEventListener('click',pExportMultiReader);
 p$('pMergeReaderDialog').addEventListener('click',e=>{if(e.target.id==='pMergeReaderDialog'||e.target.closest('[data-pa="close-merge-reader"]'))pCloseMergeReader()});
 async function pExportReader(){const f=pFlow();if(!f)return;try{pSetStatus('正在打包可离线打开的查看版 HTML…');const packed=await pPack([f]);pDownloadText(`${f.name}-个人流程查看版.html`,pReaderHtml(packed),'text/html;charset=utf-8');pSetStatus('✓ 查看版已导出');pAlert('查看版 HTML 已导出，含话术、按钮及附件')}catch(err){console.error(err);pSetStatus('查看版导出失败');pAlert(err.message||'导出失败')}}
+
+/* Return the exact original-export HTML so MSWQ publication can use the same bytes.
+   Do not recreate the reader, rewrite CSS, or convert the steps to another UI. */
+window.mswqBuildExactExportHtml=async(kind,flow)=>{
+ if(!flow||typeof flow!=='object')throw new Error('流程内容无效');
+ if(kind==='personal')return pReaderHtml(await pPack([flow]));
+ if(kind==='group')return mswqGroupReaderHtml(flow);
+ throw new Error('此内容类型不能使用原版 HTML 导出');
+};
+
 function pScrollTo(id){const f=pFlow();if(!f)return;const el=p$('pSteps').querySelector(`[data-stepid="${id}"]`);if(el){el.scrollIntoView({block:'center',behavior:'smooth'});el.style.outline='2px solid #ffbb68';setTimeout(()=>{if(el.isConnected)el.style.outline=''},1700)}else{p$('pStepSearch').value='';pVisible=Math.max(pVisible,f.steps.findIndex(x=>x.id===id)+1);pRenderSteps();requestAnimationFrame(()=>pScrollTo(id))}}
 function pToNext(){const f=pFlow();if(!f)return;const next=f.steps.find(s=>!s.done);if(next)pScrollTo(next.id);else pAlert('这套流程的所有步骤都已标记完成')}
 
