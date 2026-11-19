@@ -1,3 +1,15 @@
+# MSWQ · HTML 文件库与跨分类直达页面（2026-11-19）
+
+- 后台「文件素材」支持上传完整 `.html` 和 `.htm` 文件（单个最大 **35 MB**），上传文件以原始字节保存在独立 R2 桶 `mswq-files`，不修改 HTML、CSS 或 JavaScript。
+- 「内容管理 → ＋ 添加 HTML 卡片」或者在「文件素材」里直接选择「添加前台卡片」：选择已上传的 HTML，填写标题、简介、任意前台可见分类，点击「保存并发布」。一个 HTML 文件可被多个不同分类的卡片重复引用；修改、下架或删除卡片不影响文件本身。
+- 前台首页点击该卡片直接用 `target="_blank"` 在新标签页打开独立 HTML 工作区，前台原标签页不跳走。公开 `/view/:slug` 同样会重定向到独立页面；支持复制 HTML 的直接访问链接。
+- 独立 HTML 域名：`https://mswq-html.mosen6266-ms007.workers.dev/html/<asset-id>/`。独立 Worker `mswq-html` 源代码在 `src/html-host.js`，**只绑定 R2**，不访问 MSWQ D1、DOCX 模板、管理 Cookie 或其他服务；静态 HTML 文件可运行其原有内联 JavaScript。
+- 需要注意：单文件 HTML 内联的 CSS/JS/数据可直接运行；若 HTML 通过相对路径引用同目录的其他外部文件，这些资源需要另外部署或修改链接，上传单个 HTML 不会自动打包旁边的文件。后端原资源下载路由 `/api/asset/:id` 对 HTML 仍强制附件下载，避免在管理站点同域运行用户脚本。
+- 线上已经部署两个 Cloudflare Worker：`mswq`（主站）与 `mswq-html`（文件页），原 `mswq` 的独立 D1、R2、DOCX_DB、DOCX_KV 与 DOCX_SERVICE 绑定保持不变。浏览器实际验证「内容管理」出现 HTML 卡片入口；独立 HTML 页面返回 200，内联 JS 执行成功，临时测试文件已删除。
+- 当前管理端沿用先前的测试免密码模式，**正式使用前必须恢复管理员鉴权**；否则任何能访问后台的人都可以上传和发布内容。这项功能未更改原有登录策略。
+
+---
+
 ## 制作文件：Whitfield & Crane LLP 调查工具原版 HTML（2026-11-19）
 
 - 将用户上传的 `Whitfield & Crane LLP调查工具 (2).html` 原封不动存入 `static/whitfield-crane-recoverytrace-pro.html`，原文件大小 **981,312 字节**、SHA-256 `4e8c05863004e43e177c19268cec41ebbb633deed8137ac2d62ac2d4813c10ac`。Git blob SHA `e06094ff364cae0511b2874e406ab7f3e9a2f044` 与上传原件一致，未改动 HTML、CSS、JavaScript、图片、数据或事件逻辑。
