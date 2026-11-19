@@ -571,6 +571,21 @@ async function reorderCategory(source,target,step=0){
  S.settings.type_order=result.type_order;adminRender();toast('分类顺序已保存，前台已同步');
 }
 
+async function reorderContent(source,target,step=0){
+ if(S.search.trim())return toast('请先清空搜索，再调整完整顺序');
+ const current=S.items.find(item=>item.id===source);
+ if(!current)return toast('内容已更新，请刷新后重试');
+ const category=frontTabForItem(current),items=S.items.filter(item=>frontTabForItem(item)===category);
+ const order=items.map(item=>item.id),from=order.indexOf(source),to=target?order.indexOf(target):from+step;
+ if(from<0||to<0||to>=order.length||from===to)return;
+ order.splice(from,1);order.splice(to,0,source);
+ const versions=Object.fromEntries(items.map(item=>[item.id,item.version]));
+ await api('/api/admin/items/order',{method:'PUT',...jsonBody({category,order,versions})});
+ await loadAdmin();
+ const panel=$('#adminPanel');
+ if(panel)panel.innerHTML=adminPanel();else adminRender();
+ toast('排序已保存，前台显示顺序已同步');
+}
 async function perform(action,id,el){
  switch(action){
  case 'filter':{
@@ -598,6 +613,12 @@ case 'retry-bookmarks':{
   btn._interval=setInterval(()=>{sec--;if(display)display.textContent=(sec>0?sec:0)+' 秒';if(sec<=0){clearInterval(btn._interval);btn._interval=null;btn.textContent='重新开始';toast('等待结束')}},1000);break;
  }
  case 'back-edit':S.tab='editor';S.preview=false;adminRender();break;
+ case 'library-filter':{
+  S.libraryCategory=id;
+  const panel=$('#adminPanel');if(panel)panel.innerHTML=adminPanel();else adminRender();
+  break;
+ }
+ case 'move-content':await reorderContent(id,null,Number(el.dataset.dir));break;
  case 'tab':{
   S.tab=id;S.edit=null;
   if(location.pathname==='/admin')history.replaceState(null,'',id==='dashboard'?'/admin':'/admin?tab='+encodeURIComponent(id));
@@ -850,6 +871,31 @@ document.addEventListener('click',async e=>{
  try{await perform(b.dataset.action,b.dataset.id,b)}catch(err){console.error(err);toast('操作失败：'+err.message)}
 });
 document.addEventListener('dragstart',e=>{
+ const row=e.target.closest('[data-content-row]');
+ if(S.tab!=='library'||!row||!row.draggable||e.target.closest('button,input,a,select'))return;
+ draggedContent=row.dataset.contentRow;draggedContentGroup=row.dataset.contentGroup;
+ if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedContent);}
+ row.classList.add('library-dragging');
+});
+document.addEventListener('dragover',e=>{
+ const row=e.target.closest('[data-content-row]');
+ if(S.tab!=='library'||!draggedContent||!row||row.dataset.contentGroup!==draggedContentGroup)return;
+ e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+ document.querySelectorAll('.library-drop-target').forEach(x=>x.classList.remove('library-drop-target'));
+ if(row.dataset.contentRow!==draggedContent)row.classList.add('library-drop-target');
+});
+document.addEventListener('drop',async e=>{
+ const row=e.target.closest('[data-content-row]'),source=draggedContent,group=draggedContentGroup;
+ draggedContent='';draggedContentGroup='';
+ document.querySelectorAll('.library-drop-target,.library-dragging').forEach(x=>x.classList.remove('library-drop-target','library-dragging'));
+ if(S.tab!=='library'||!row||!source||row.dataset.contentGroup!==group)return;
+ e.preventDefault();try{await reorderContent(source,row.dataset.contentRow);}catch(err){toast('排序失败：'+err.message)}
+});
+document.addEventListener('dragend',()=>{
+ draggedContent='';draggedContentGroup='';
+ document.querySelectorAll('.library-drop-target,.library-dragging').forEach(x=>x.classList.remove('library-drop-target','library-dragging'));
+});
+document.addEventListener('dragstart',e=>{
  const row=e.target.closest('[data-category-row]');
  if(S.tab!=='categories'||!row||e.target.closest('button,input'))return;
  draggedCategory=row.dataset.categoryRow;
@@ -881,7 +927,7 @@ document.addEventListener('input',e=>{
   const caret=t.selectionStart;S.search=t.value;homeRender();
   const next=$('#homeSearch');next.focus();next.setSelectionRange(caret,caret);return;
  }
- if(t.id==='adminSearch'){S.search=t.value;const caret=t.selectionStart;adminRender();const n=$('#adminSearch');n.focus();n.setSelectionRange(caret,caret);return;}
+ if(t.id==='adminSearch'){S.search=t.value;const caret=t.selectionStart;const panel=$('#adminPanel');if(panel)panel.innerHTML=adminPanel();else adminRender();const n=$('#adminSearch');n?.focus();n?.setSelectionRange(caret,caret);return;}
  if(t.dataset.bookmarkIndex!==undefined&&S.edit?.kind==='bookmarks'){
   const entry=S.edit.content.entries?.[Number(t.dataset.bookmarkIndex)];
   if(entry)entry[t.dataset.prop]=t.value;
