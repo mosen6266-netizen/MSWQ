@@ -22,6 +22,7 @@ function orderedCategoryIds(settings){
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
 const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library'};
 let toastTimer;
+let draggedCategory='';
 function toast(t){const n=$('#toast');n.textContent=t;n.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.classList.remove('show'),2600)}
 async function api(path,opts={}){
  const response=await fetch(path,{credentials:'same-origin',cache:'no-store',...opts});
@@ -648,6 +649,32 @@ document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-action]');if(!b)return;
  try{await perform(b.dataset.action,b.dataset.id,b)}catch(err){console.error(err);toast('操作失败：'+err.message)}
 });
+document.addEventListener('dragstart',e=>{
+ const row=e.target.closest('[data-category-row]');
+ if(S.tab!=='categories'||!row||e.target.closest('button,input'))return;
+ draggedCategory=row.dataset.categoryRow;
+ if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedCategory);}
+ row.classList.add('category-dragging');
+});
+document.addEventListener('dragover',e=>{
+ const row=e.target.closest('[data-category-row]');
+ if(S.tab!=='categories'||!draggedCategory||!row)return;
+ e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+ document.querySelectorAll('.category-drag-target').forEach(x=>x.classList.remove('category-drag-target'));
+ if(row.dataset.categoryRow!==draggedCategory)row.classList.add('category-drag-target');
+});
+document.addEventListener('drop',async e=>{
+ const row=e.target.closest('[data-category-row]'),source=draggedCategory;
+ draggedCategory='';
+ document.querySelectorAll('.category-drag-target,.category-dragging').forEach(x=>x.classList.remove('category-drag-target','category-dragging'));
+ if(S.tab!=='categories'||!source||!row)return;
+ e.preventDefault();
+ try{await reorderCategory(source,row.dataset.categoryRow);}catch(err){toast('排序失败：'+err.message);}
+});
+document.addEventListener('dragend',()=>{
+ draggedCategory='';
+ document.querySelectorAll('.category-drag-target,.category-dragging').forEach(x=>x.classList.remove('category-drag-target','category-dragging'));
+});
 document.addEventListener('input',e=>{
  const t=e.target;
  if(t.id==='homeSearch'){
@@ -720,8 +747,8 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener('keydown',e=>{
  if(e.key==='Escape')document.getElementById('mediaPreview')?.remove();
- if(e.key==='Enter'&&e.target.id==='customTypeName'){
-  e.preventDefault();document.querySelector('[data-action="create-custom-type"]')?.click();
+ if(e.key==='Enter'&&(e.target.id==='customTypeName'||e.target.id==='categoryRenameInput')){
+  e.preventDefault();document.querySelector(e.target.id==='customTypeName'?'[data-action="create-custom-type"]':'[data-action="save-category-name"]')?.click();
  }
 });
 async function boot(){
