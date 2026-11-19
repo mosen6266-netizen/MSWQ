@@ -393,6 +393,41 @@ function docxDisplayCategoryOptions(selected=''){
  const legacy=selected&&!visible.includes(selected)?'<option value="'+esc(selected)+'" selected>原有分类（已隐藏或删除），请更换</option>':'';
  return '<option value="">请选择前台显示的分类…</option>'+legacy+options+'<option value="__new_category__">＋ 新建分类…</option>';
 }
+function htmlCategoryOptions(selected=''){
+ const ids=orderedCategoryIds(S.settings).filter(id=>!(S.settings?.hidden_types||[]).includes(id));
+ const legacy=selected&&!ids.includes(selected)?'<option value="'+esc(selected)+'" selected>原分类（已隐藏）</option>':'';
+ return '<option value="">请选择前台显示分类…</option>'+legacy+ids.map(id=>'<option value="'+esc(id)+'" '+(id===selected?'selected':'')+'>'+esc(typeNames[id]||id)+'</option>').join('');
+}
+function htmlAssetOptions(selected=''){
+ return '<option value="">请选择已经上传的 HTML 文件…</option>'+S.assets.filter(a=>a.mime==='text/html').map(a=>'<option value="'+esc(a.id)+'" '+(a.id===selected?'selected':'')+'>'+esc(a.name)+'</option>').join('');
+}
+async function showQuickHtmlCreate(chosen=''){
+ await loadAssets();
+ const files=S.assets.filter(a=>a.mime==='text/html'),file=files.find(a=>a.id===chosen)||files[0];
+ const active=orderedCategoryIds(S.settings).filter(id=>!(S.settings?.hidden_types||[]).includes(id));
+ const category=active.includes(S.libraryCategory)?S.libraryCategory:active.includes('page')?'page':active[0]||'';
+ openModal('<h2>＋ 发布 HTML 页面卡片</h2><p class="muted small">选择已上传的完整 HTML 文件，放在任意前台分类；点击卡片直接新标签页打开原始完整界面。</p>'+
+  '<div class="field"><label>关联 HTML 文件</label><select id="quickHtmlAsset">'+htmlAssetOptions(chosen||file?.id||'')+'</select></div>'+
+  '<div class="field"><label>卡片标题</label><input id="quickHtmlTitle" maxlength="160" value="'+esc(file?.name?.replace(/\.html?$/i,'')||'')+'" placeholder="例如：调查工具"></div>'+
+  '<div class="field"><label>显示在哪个分类</label><select id="quickHtmlCategory">'+htmlCategoryOptions(category)+'</select></div>'+
+  '<div class="field"><label>简介（可选）</label><textarea id="quickHtmlDescription" placeholder="在首页卡片下方显示"></textarea></div>'+
+  (files.length?'':'<p class="muted">文件库暂无 HTML，请先到「文件素材」上传 HTML。</p>')+
+  '<div class="flex end"><button class="btn" data-action="close-modal">取消</button>'+
+  (files.length?'<button class="btn green" data-action="publish-html-quick">保存并发布</button>':'<button class="btn primary" data-action="tab" data-id="assets">前往上传文件</button>')+'</div>');
+}
+function htmlEditorHtml(item){
+ const content=item.content||(item.content={});
+ return row('HTML 文件卡片','原文件保留在文件库。可更换 HTML 文件、卡片标题和显示分类，不改变文件自身内容。',
+  field('卡片标题',item.title,'title','例如：调查工具')+
+  '<div class="field"><label>关联的 HTML 文件</label><select data-field="htmlAssetId">'+htmlAssetOptions(content.htmlAssetId||'')+'</select></div>'+
+  '<div class="field"><label>直接上传新 HTML 替换</label><input id="htmlEditorUpload" type="file" accept=".html,.htm,text/html"></div>'+
+  '<div class="field"><label>前台分类</label><select data-field="category">'+htmlCategoryOptions(item.category||'page')+'</select></div>'+
+  field('简介',item.description,'description','可选','textarea')+
+  field('首页排序',item.sort_order,'sort_order','数字越小越靠前')+
+  '<div class="flex" style="flex-wrap:wrap;margin-top:16px"><button class="btn" data-action="save-item">保存修改</button>'+
+  '<button class="btn green" data-action="publish-item">'+(item.status==='published'?'保存并继续发布':'保存并发布')+'</button>'+
+  (item.id?'<button class="btn" data-action="copy-current">复制直达链接</button><button class="btn" data-action="preview-item">打开完整 HTML</button><button class="btn danger" data-action="delete-item">删除卡片</button>':'')+'</div>');
+}
 function defaultDocxCategory(){
  const active=orderedCategoryIds(S.settings).filter(id=>!(S.settings?.hidden_types||[]).includes(id));
  return active.includes('document')?'document':active[0]||'';
@@ -510,6 +545,7 @@ function editorHtml(){
  const x=S.edit;if(!x)return '<div class="empty">请先从列表中选择需要编辑的内容</div>';
  if(x.kind==='profile')return profileEditorHtml(x);
  if(x.kind==='document')return documentEditorHtml(x);
+ if(x.kind==='html')return htmlEditorHtml(x);
  const c=x.content||(x.content={blocks:[],members:[]});
  const availableTypes=orderedCategoryIds(S.settings);if(!availableTypes.includes(x.kind))availableTypes.push(x.kind);
   const select='<select data-field="kind">'+availableTypes.map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+esc(t)+'">'+esc(typeNames[t]||'原分类')+((S.settings?.deleted_types||[]).includes(t)?'（已删除，保留原内容）':'')+'</option>').join('')+'<option disabled>──────────</option><option value="__create_type__">＋ 新增分类…</option></select>';
@@ -551,7 +587,7 @@ function assetsHtml(){
  return row('素材库','上传后点击复制链接；正文图片和附件在步骤编辑中可直接选择','<div class="field"><label>添加 HTML、图片和文件（HTML 35MB，视频 50MB，其他 12MB）</label><input type="file" id="assetUpload" accept=".html,.htm,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
 }
 function assetCard(a,picker=false){
- return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':a.mime?.startsWith('video/')?'<video muted playsinline preload="metadata" src="'+asset(a.id)+'"></video>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
+ return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':a.mime?.startsWith('video/')?'<video muted playsinline preload="metadata" src="'+asset(a.id)+'"></video>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':a.mime==='text/html'?'<button class="btn sm green" data-action="new-html-card" data-id="'+a.id+'">添加前台卡片</button><a class="btn sm" target="_blank" rel="noopener noreferrer" href="'+htmlUrl(a.id)+'">打开HTML</a><button class="btn sm" data-action="copy-html-asset" data-id="'+a.id+'">复制直达链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
 }
 function categoryManagerHtml(){
  const hidden=new Set(S.settings?.hidden_types||[]),active=orderedCategoryIds(S.settings);
