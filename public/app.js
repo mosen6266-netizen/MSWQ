@@ -260,12 +260,15 @@ function newItem(kind='personal'){
  S.tab='editor';adminRender();
 }
 
-function specialImagePicker(collection,index,assetId){
- const id=Number(index),name=collection==='fields'?'名片图片':'网站图标';
- return '<div class="special-image-tools">'+(assetId?'<div class="special-image-preview"><img loading="lazy" alt="'+name+'" src="'+asset(assetId)+'"></div>':'')+
-  '<label class="btn sm special-upload-label">直接上传图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" data-image-upload="'+collection+'" data-index="'+id+'"></label>'+
-  '<button class="btn sm" data-action="pick-special-image" data-collection="'+collection+'" data-id="'+id+'">从素材库选择</button>'+
-  (assetId?'<button class="btn sm danger" data-action="clear-special-image" data-collection="'+collection+'" data-id="'+id+'">移除图片</button>':'')+'</div>';
+function specialImagePicker(collection,index,assetId,media='image'){
+ const id=Number(index),video=media==='video',name=video?'名片视频':collection==='fields'?'名片图片':'网站图标';
+ const accept=video?'.mp4,.webm,video/mp4,video/webm':'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
+ const thumbnail=video?'<video muted playsinline preload="metadata" src="'+asset(assetId)+'"></video>':'<img loading="lazy" alt="'+name+'" src="'+asset(assetId)+'">';
+ return '<div class="special-image-tools">'+(assetId?'<div class="special-image-preview">'+thumbnail+'</div>':'')+
+  '<label class="btn sm special-upload-label">直接上传'+(video?'视频':'图片')+'<input type="file" accept="'+accept+'" data-media-upload="'+collection+'" data-media-kind="'+media+'" data-index="'+id+'"></label>'+
+  '<button class="btn sm" data-action="pick-special-image" data-collection="'+collection+'" data-media="'+media+'" data-id="'+id+'">从素材库选择</button>'+
+  (assetId?'<button class="btn sm danger" data-action="clear-special-image" data-collection="'+collection+'" data-id="'+id+'">移除'+(video?'视频':'图片')+'</button>':'')+
+  (video?'<span class="muted small">MP4 / WebM，单个不超过 50MB</span>':'')+'</div>';
 }
 function specialMoveButtons(action,index,length,removeAction){
  return '<div class="special-row-controls"><button class="btn sm" data-action="'+action+'" data-id="'+index+'" data-dir="-1" '+(!index?'disabled':'')+'>↑</button>'+
@@ -281,12 +284,12 @@ function bookmarkEditorRows(entries){
   '<div class="empty">暂时没有收藏的网址，点击下方「＋ 添加网址」开始</div>';
 }
 function profileEditorRows(fields){
- const labels={text:'文字内容',link:'网址链接',image:'图片'};
+ const labels={text:'文字内容',link:'网址链接',image:'图片',video:'视频'};
  return fields.map((f,i)=>'<div class="special-edit-row"><div class="special-row-heading"><strong>自定义项目 '+(i+1)+'</strong>'+specialMoveButtons('move-profile',i,fields.length,'remove-profile')+'</div>'+
   '<div class="two"><div class="field"><label>标签名称（你自己命名）</label><input maxlength="120" placeholder="例如：姓名、联系方式、作品图、任何名称" data-profile-index="'+i+'" data-prop="label" value="'+esc(f.label||'')+'"></div>'+
   '<div class="field"><label>内容形式</label><select data-profile-index="'+i+'" data-prop="type">'+Object.keys(labels).map(k=>'<option value="'+k+'" '+(f.type===k?'selected':'')+'>'+labels[k]+'</option>').join('')+'</select></div></div>'+
-  (f.type==='image'?'<div class="field"><label>上传图片或从已有素材选择</label>'+specialImagePicker('fields',i,f.assetId)+'</div>'+
-    '<div class="field"><label>图片描述（可留空）</label><textarea data-profile-index="'+i+'" data-prop="value" placeholder="图片下方显示的说明文字">'+esc(f.value||'')+'</textarea></div>':
+  (f.type==='image'||f.type==='video'?'<div class="field"><label>上传'+(f.type==='video'?'视频':'图片')+'或从已有素材选择</label>'+specialImagePicker('fields',i,f.assetId,f.type)+'</div>'+
+    '<div class="field"><label>'+(f.type==='video'?'视频':'图片')+'描述（可留空）</label><textarea data-profile-index="'+i+'" data-prop="value" placeholder="媒体下方显示的说明文字">'+esc(f.value||'')+'</textarea></div>':
     f.type==='link'?'<div class="field"><label>标签内容 · 网址</label><input type="url" maxlength="2048" data-profile-index="'+i+'" data-prop="value" placeholder="https://example.com" value="'+esc(f.value||'')+'"></div>':
     '<div class="field"><label>标签内容 · 自由填写</label><textarea data-profile-index="'+i+'" data-prop="value" maxlength="3500" placeholder="例如：迈克；也可以输入多行文字">'+esc(f.value||'')+'</textarea></div>')+
   '</div>').join('')||'<div class="empty">名片还没有任何资料项。点击下方按钮，自己建立标签和内容。</div>';
@@ -300,9 +303,9 @@ function specialEditorActions(x){
 }
 function profileEditorHtml(x){
  const c=x.content||(x.content={});const fields=c.fields||(c.fields=[]);
- const items=row('名片项目 · 完全自定义','不预设姓名、电话、邮箱等信息；每项标签和内容都由你自己创建，图片也可以作为单独项目',
+ const items=row('名片项目 · 完全自定义','不预设姓名、电话、邮箱等信息；每项标签和内容都由你自己创建，图片和视频也可以作为单独项目',
   profileEditorRows(fields)+'<div class="editor-add"><button class="btn green" data-action="add-profile" data-id="text">＋ 文字标签</button>'+
-  '<button class="btn" data-action="add-profile" data-id="link">＋ 网址标签</button><button class="btn" data-action="add-profile" data-id="image">＋ 图片标签</button></div>');
+  '<button class="btn" data-action="add-profile" data-id="link">＋ 网址标签</button><button class="btn" data-action="add-profile" data-id="image">＋ 图片标签</button><button class="btn" data-action="add-profile" data-id="video">＋ 视频标签</button></div>');
  const meta=row('名片页面设置','这里只控制前台显示标题和公开网址，不会在名片中自动添加个人资料字段',
   '<details class="special-meta-details"><summary>修改名片页面标题、路径和展示设置</summary><div class="special-meta-inside">'+
    field('名片在首页显示的标题',x.title,'title','个人名片')+
@@ -355,10 +358,10 @@ function blockEditor(b,i,members){
 }
 function fieldMiniText(b,i){return '<div class="field" style="margin-top:9px"><label>内容 / 说明</label><textarea data-block="'+i+'" data-bfield="text">'+esc(b.text||'')+'</textarea></div>'}
 function assetsHtml(){
- return row('素材库','上传后点击复制链接；正文图片和附件在步骤编辑中可直接选择','<div class="field"><label>添加图片 / 文件（12MB以内）</label><input type="file" id="assetUpload" accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
+ return row('素材库','上传后点击复制链接；正文图片和附件在步骤编辑中可直接选择','<div class="field"><label>添加图片 / 文件（视频最高 50MB，其他文件 12MB）</label><input type="file" id="assetUpload" accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
 }
 function assetCard(a,picker=false){
- return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
+ return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':a.mime?.startsWith('video/')?'<video muted playsinline preload="metadata" src="'+asset(a.id)+'"></video>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
 }
 function categoryManagerHtml(){
  const hidden=new Set(S.settings?.hidden_types||[]);
@@ -428,7 +431,7 @@ async function perform(action,id,el){
   adminRender();break;
  }
  case 'add-profile':
-  (S.edit.content.fields||(S.edit.content.fields=[])).push({id:crypto.randomUUID(),type:['text','link','image'].includes(id)?id:'text',label:'',value:'',assetId:''});
+  (S.edit.content.fields||(S.edit.content.fields=[])).push({id:crypto.randomUUID(),type:['text','link','image','video'].includes(id)?id:'text',label:'',value:'',assetId:''});
   adminRender();break;
  case 'remove-profile':S.edit.content.fields.splice(Number(id),1);adminRender();break;
  case 'move-profile':{
@@ -437,12 +440,12 @@ async function perform(action,id,el){
   adminRender();break;
  }
  case 'pick-special-image':{
-  const collection=el.dataset.collection;
+  const collection=el.dataset.collection,media=el.dataset.media==='video'?'video':'image';
   if(!['entries','fields'].includes(collection))break;
-  S.picking={collection,index:Number(id)};await loadAssets();
-  const images=S.assets.filter(a=>a.mime?.startsWith('image/'));
-  openModal('<h2>选择图片</h2><p class="muted small">选择之前上传的图片，或返回编辑器直接上传新图片。</p>'+
-   (images.length?'<div class="asset-grid">'+images.map(a=>assetCard(a,true)).join('')+'</div>':'<div class="empty">素材库还没有图片，可以在编辑区直接上传。</div>')+
+  S.picking={collection,index:Number(id),media};await loadAssets();
+  const candidates=S.assets.filter(a=>a.mime?.startsWith(media+'/'));
+  openModal('<h2>选择'+(media==='video'?'视频':'图片')+'</h2><p class="muted small">从已经上传的文件中选择。</p>'+
+   (candidates.length?'<div class="asset-grid">'+candidates.map(a=>assetCard(a,true)).join('')+'</div>':'<div class="empty">素材库还没有'+(media==='video'?'视频':'图片')+'，可以在编辑区直接上传。</div>')+
    '<div class="flex" style="justify-content:flex-end;margin-top:16px"><button class="btn" data-action="close-modal">取消</button></div>');
   break;
  }
@@ -451,6 +454,13 @@ async function perform(action,id,el){
   if(['entries','fields'].includes(collection)&&S.edit.content[collection]?.[index])S.edit.content[collection][index].assetId='';
   adminRender();break;
  }
+ case 'media-preview':openMediaPreview(id,el.dataset.media,el.dataset.title);break;
+ case 'close-media-preview':document.getElementById('mediaPreview')?.remove();break;
+ case 'copy-bookmark':{
+  const bookmark=S.viewer?.content?.entries?.find(e=>e.id===id);
+  if(bookmark){await navigator.clipboard.writeText(String(bookmark.url||''));toast('网址已复制');}break;
+ }
+ case 'copy-link-url':await navigator.clipboard.writeText(el.dataset.url||'');toast('链接已复制');break;
  case 'copy-profile':{
   const f=S.viewer?.content?.fields?.find(f=>f.id===id);
   if(f){await navigator.clipboard.writeText(String(f.value||''));toast('内容已复制');}break;
@@ -566,9 +576,10 @@ async function uploadAssets(){
  if(!files.length)return toast('请先选择文件');
  let success=0;
  for(const file of files){
-  if(file.size>12000000){toast('文件超过12MB: '+file.name);continue}
+  const limit=/\.(?:mp4|webm)$/i.test(file.name)||file.type.startsWith('video/')?50000000:12000000;
+  if(file.size>limit){toast('文件超过'+(limit===50000000?'50MB':'12MB')+': '+file.name);continue}
   let mime=file.type;
-  if(!mime){const ext=file.name.split('.').pop().toLowerCase();mime={docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',txt:'text/plain',zip:'application/zip'}[ext]||'application/octet-stream'}
+  if(!mime){const ext=file.name.split('.').pop().toLowerCase();mime={docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',mp4:'video/mp4',webm:'video/webm',txt:'text/plain',zip:'application/zip'}[ext]||'application/octet-stream'}
   await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
   success++;
  }
@@ -625,25 +636,26 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',async e=>{
  const t=e.target;
- if(t.dataset.imageUpload){
-  const collection=t.dataset.imageUpload,index=Number(t.dataset.index),file=t.files?.[0];
+ if(t.dataset.mediaUpload){
+  const collection=t.dataset.mediaUpload,media=t.dataset.mediaKind==='video'?'video':'image',index=Number(t.dataset.index),file=t.files?.[0];
   if(!file||!S.edit||!['entries','fields'].includes(collection))return;
-  const allowed=['image/jpeg','image/png','image/gif','image/webp'];
+  const allowed=media==='video'?['video/mp4','video/webm']:['image/jpeg','image/png','image/gif','image/webp'];
   const ext=file.name.split('.').pop()?.toLowerCase();
-  const mime=allowed.includes(file.type)?file.type:({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp'}[ext]||'');
-  if(!allowed.includes(mime)){toast('仅支持 JPG、PNG、WEBP、GIF 图片');return;}
-  if(file.size>12000000){toast('图片不得超过 12MB');return;}
-  t.disabled=true;toast('正在上传图片…');
+  const mime=allowed.includes(file.type)?file.type:({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',mp4:'video/mp4',webm:'video/webm'}[ext]||'');
+  if(!allowed.includes(mime)){toast(media==='video'?'仅支持 MP4 / WebM 视频':'仅支持 JPG、PNG、WEBP、GIF 图片');return;}
+  const limit=media==='video'?50000000:12000000;
+  if(file.size>limit){toast(media==='video'?'视频不能超过 50MB':'图片不得超过 12MB');return;}
+  t.disabled=true;toast('正在上传'+(media==='video'?'视频':'图片')+'…');
   try{
    const data=await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
    const entry=S.edit.content[collection]?.[index];
-   if(entry){entry.assetId=data.asset.id;adminRender();toast('图片已上传并选用');}
-  }catch(err){console.error(err);t.disabled=false;toast('图片上传失败：'+err.message)}
+   if(entry){entry.assetId=data.asset.id;adminRender();toast((media==='video'?'视频':'图片')+'已上传并选用');}
+  }catch(err){console.error(err);t.disabled=false;toast((media==='video'?'视频':'图片')+'上传失败：'+err.message)}
   return;
  }
  if(t.dataset.profileIndex!==undefined&&t.dataset.prop==='type'&&S.edit?.kind==='profile'){
   const entry=S.edit.content.fields?.[Number(t.dataset.profileIndex)];
-  if(entry){entry.type=t.value;adminRender();}
+  if(entry){if(entry.type!==t.value&&['image','video'].includes(entry.type))entry.assetId='';entry.type=t.value;adminRender();}
   return;
  }
  if(t.dataset.field==='kind'&&S.edit){
@@ -658,6 +670,7 @@ document.addEventListener('change',async e=>{
  }
 });
 document.addEventListener('keydown',e=>{
+ if(e.key==='Escape')document.getElementById('mediaPreview')?.remove();
  if(e.key==='Enter'&&e.target.id==='customTypeName'){
   e.preventDefault();document.querySelector('[data-action="create-custom-type"]')?.click();
  }
