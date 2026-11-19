@@ -169,16 +169,19 @@ function publicDocxPage(value){
 }
 async function handler(req,env){
  const url=new URL(req.url),p=url.pathname,method=req.method;
- // Compatibility for old template links mistakenly generated as /?template=<id>.
- // Serve the selected DOCX template in place, without redirecting to another page.
- if(method==='GET'&&p==='/'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return publicDocxPage(ASSETS.docx);
+ // Previously copied root template URLs now use the same MSWQ frame as new links.
+ // Bare /docx (or /docx?embed=1) remains the underlying read-only workspace.
+ if(method==='GET'&&p==='/'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return html(ASSETS.html);
  // Render all published content within the MSWQ shell; the frontend selects the
  // full-width embedded DOCX view without redirecting or creating another tab.
  if(method==='GET'&&(p==='/'||p==='/admin'||p==='/admin/'||p.startsWith('/view/')))return html(ASSETS.html);
  if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/legacy-bridge.js')return new Response(ASSETS.bridge,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
- if(method==='GET'&&(p==='/docx'||p==='/docx/'))return publicDocxPage(ASSETS.docx);
+ if(method==='GET'&&(p==='/docx'||p==='/docx/')){
+  if(url.searchParams.get('embed')!=='1'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return html(ASSETS.html);
+  return publicDocxPage(ASSETS.docx);
+ }
  if(method==='GET'&&p==='/api/docx/session')return out({admin:false});
  if(p.startsWith('/api/docx/')){
   if(method!=='GET')return fail('公开文档服务不支持管理操作',405);
@@ -191,7 +194,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.8',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.9',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
