@@ -1898,6 +1898,24 @@ function personalOfflineReaderMarkup(packed){
  return {tabs,body:cards||'<p class="muted">暂无流程</p>'};
 }
 
+/* Shared HTML export decoration: this exact output is used offline and online. */
+function mswqReaderAddBackLink(html){
+ const home='https://mswq.mosen6266-ms007.workers.dev/';
+ if(typeof html!=='string'||!html.toLowerCase().startsWith('<!doctype html>'))throw Error('原版 HTML 内容格式不正确');
+ if(html.includes('data-mswq-home="true"'))return html;
+ const css='\n.mswq-home-link{display:inline-flex;align-items:center;justify-content:center;width:max-content;max-width:100%;box-sizing:border-box;padding:8px 12px;margin:0 0 8px;color:#f1f1ef;background:#303234;border:1px solid #676a69;border-radius:9px;text-decoration:none;font-size:12px;font-weight:800;line-height:1.35;white-space:nowrap;cursor:pointer}.mswq-home-link:hover{color:#fff;border-color:#94b8a3;background:#3d4841}.mswq-home-link:focus-visible{outline:2px solid #71ce9c;outline-offset:3px}.top>.mswq-home-link{flex-shrink:0;margin:0 6px 0 0}\n';
+ const link='<a data-mswq-home="true" class="mswq-home-link" href="'+home+'" aria-label="返回 MSWQ 首页">← 返回首页</a>';
+ if(!html.includes('</style></head>'))throw Error('原版 HTML 缺少样式结束位置');
+ let output=html.replace('</style></head>',css+'</style></head>');
+ const personal='<div class="reader-header-main">';
+ const group='<div class="top">';
+ if(output.includes(personal))output=output.replace(personal,personal+link);
+ else if(output.includes(group))output=output.replace(group,group+link);
+ else throw Error('原版 HTML 顶部导航结构不受支持');
+ return output;
+}
+window.mswqAddReaderBackLink=mswqReaderAddBackLink;
+
 function mswqGroupReaderHtml(s){
   const payload=JSON.stringify(s).replace(/</g,'\\u003c');
   const reader=`<!doctype html>
@@ -2119,7 +2137,7 @@ renderMembers();render();renderReaderNotes();renderReaderKeywords();renderReader
  for(const k of navKeys){const b=buttons[keys.indexOf(k)];if(!b)continue;b.hidden=(data.navDisabled||[]).includes(k);rTabs.appendChild(b)}
  const next=navKeys.find(k=>!(data.navDisabled||[]).includes(k)&&keys.includes(k));groupReaderSide(next||'none');
 <\/script></body></html>`;
-  return reader;
+  return mswqReaderAddBackLink(reader);
 }
 function exportReader(){
   const s=current();if(!s){alert('请先选择要导出的剧本');return}
@@ -2837,7 +2855,7 @@ async function pExportMultiReader(){
  try{
   pSetStatus('正在合并 '+flows.length+' 套流程及附件…');
   const packed=await pPack(flows);
-  pDownloadText('个人流程合集-'+flows.length+'套-查看版.html',pReaderHtml(packed),'text/html;charset=utf-8');
+  pDownloadText('个人流程合集-'+flows.length+'套-查看版.html',mswqReaderAddBackLink(pReaderHtml(packed)),'text/html;charset=utf-8');
   pCloseMergeReader();pSetStatus('✓ 已合并导出 '+flows.length+' 套流程');pAlert('已导出 '+flows.length+' 套流程的单个查看版 HTML，可在顶部切换流程，附件也已打包。');
  }catch(err){console.error(err);pSetStatus('合并导出失败');pAlert(err.message||'导出失败')}
  finally{exportButton.disabled=false}
@@ -2848,13 +2866,13 @@ p$('pMergeSelectAll').addEventListener('click',()=>{pMergeSelected=new Set(pStat
 p$('pMergeSelectNone').addEventListener('click',()=>{pMergeSelected.clear();pMergeListRender()});
 p$('pMergeReaderExport').addEventListener('click',pExportMultiReader);
 p$('pMergeReaderDialog').addEventListener('click',e=>{if(e.target.id==='pMergeReaderDialog'||e.target.closest('[data-pa="close-merge-reader"]'))pCloseMergeReader()});
-async function pExportReader(){const f=pFlow();if(!f)return;try{pSetStatus('正在打包可离线打开的查看版 HTML…');const packed=await pPack([f]);pDownloadText(`${f.name}-个人流程查看版.html`,pReaderHtml(packed),'text/html;charset=utf-8');pSetStatus('✓ 查看版已导出');pAlert('查看版 HTML 已导出，含话术、按钮及附件')}catch(err){console.error(err);pSetStatus('查看版导出失败');pAlert(err.message||'导出失败')}}
+async function pExportReader(){const f=pFlow();if(!f)return;try{pSetStatus('正在打包可离线打开的查看版 HTML…');const packed=await pPack([f]);pDownloadText(`${f.name}-个人流程查看版.html`,mswqReaderAddBackLink(pReaderHtml(packed)),'text/html;charset=utf-8');pSetStatus('✓ 查看版已导出');pAlert('查看版 HTML 已导出，含话术、按钮及附件')}catch(err){console.error(err);pSetStatus('查看版导出失败');pAlert(err.message||'导出失败')}}
 
 /* Return the exact original-export HTML so MSWQ publication can use the same bytes.
    Do not recreate the reader, rewrite CSS, or convert the steps to another UI. */
 window.mswqBuildExactExportHtml=async(kind,flow)=>{
  if(!flow||typeof flow!=='object')throw new Error('流程内容无效');
- if(kind==='personal')return pReaderHtml(await pPack([flow]));
+ if(kind==='personal')return mswqReaderAddBackLink(pReaderHtml(await pPack([flow])));
  if(kind==='group')return mswqGroupReaderHtml(flow);
  throw new Error('此内容类型不能使用原版 HTML 导出');
 };
