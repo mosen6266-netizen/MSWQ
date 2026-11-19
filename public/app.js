@@ -72,7 +72,12 @@ function homeRender(){
  const bookmarkRows=isBookmarkTab?S.bookmarkEntries.filter(x=>matching([x.title,x.note,x.url,x.collectionTitle].join(' '))):[];
  const busy=isBookmarkTab&&!S.bookmarksLoaded&&!S.bookmarksError;
  const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length+items.filter(x=>x.kind==='document').length:'…'):items.length;
- const cards=(isBookmarkTab?items.filter(x=>x.kind==='document'):items).map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
+ const cards=(isBookmarkTab?items.filter(x=>x.kind==='document'):items).map(x=>{
+  const direct=x.direct_url&&absoluteHttpUrl(x.direct_url)?x.direct_url:'';
+  const destination=direct?direct:itemHref(x);
+  const tabAttrs=direct?' target="_blank" rel="noopener noreferrer"':'';
+  return '<a class="tile" href="'+esc(destination)+'"'+tabAttrs+'><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(direct?'打开完整页面 ↗':x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>';
+ }).join('');
  let content;
  if(isBookmarkTab){
   content=S.bookmarksError?'<div class="empty">网址收藏加载失败：'+esc(S.bookmarksError)+' <button class="btn sm" data-action="retry-bookmarks">重试</button></div>':
