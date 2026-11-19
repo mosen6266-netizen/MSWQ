@@ -42,12 +42,12 @@ function field(name,value,prop,placeholder='',kind='input'){
  const v=esc(value||'');
  return '<div class="field"><label>'+esc(name)+'</label>'+(kind==='textarea'?'<textarea data-field="'+prop+'" placeholder="'+esc(placeholder)+'">'+v+'</textarea>':'<input data-field="'+prop+'" value="'+v+'" placeholder="'+esc(placeholder)+'">')+'</div>';
 }
-function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" aria-label="返回 MSWQ 首页">← 返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
+function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" data-mswq-back="true" aria-label="返回">← 返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
 function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
 async function showHome(){
  document.title='MSWQ · 内容与工具中心';S.preview=false;
  root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
- try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);S.filter=orderedCategoryIds(S.settings).find(k=>!(S.settings.hidden_types||[]).includes(k))||'all';if(S.filter==='bookmarks'){try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}}homeRender();}
+ try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);const visibleTypes=orderedCategoryIds(S.settings).filter(k=>!(S.settings.hidden_types||[]).includes(k));const remembered=history.state?.mswqHomeFilter;S.filter=(remembered==='all'||visibleTypes.includes(remembered))?remembered:(visibleTypes[0]||'all');if(S.filter==='bookmarks'){try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}}homeRender();}
  catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
 }
 async function loadPublicBookmarks(){
@@ -233,8 +233,8 @@ async function showReader(slugText,localItem=null){
  }else{
   body=blocks.map((b,i)=>blockRender(b,i,item)).join('')||'<div class="empty">尚无公开内容</div>';
  }
- root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" class="btn sm">← 返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid'+(nav?'':' reader-no-sidebar')+'"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main>'+(nav?'<aside class="reader-aside"><h3>绿色提示导航</h3>'+nav+'</aside>':'')+'</div></div>';
- }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" href="/">返回首页</a></p></div>'}
+ root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" data-mswq-back="true" class="btn sm">← 返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid'+(nav?'':' reader-no-sidebar')+'"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main>'+(nav?'<aside class="reader-aside"><h3>绿色提示导航</h3>'+nav+'</aside>':'')+'</div></div>';
+ }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" data-mswq-back="true" href="/">← 返回</a></p></div>'}
 }
 async function openAdmin(){
  root.innerHTML='<div class="loading center" style="padding:80px">正在加载测试后台…</div>';
@@ -594,6 +594,7 @@ async function perform(action,id,el){
  switch(action){
  case 'filter':{
  S.filter=id;
+ history.replaceState({...history.state,mswqHomeFilter:id},'',location.href);
  if(id==='bookmarks'&&!S.bookmarksLoaded){
   S.bookmarksError='';homeRender();
   try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}
@@ -871,6 +872,12 @@ function openModal(content){closeModal();const wrap=document.createElement('div'
 function closeModal(){$('#currentModal')?.remove()}
 function download(name,content,type){const u=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 document.addEventListener('click',async e=>{
+ const back=e.target.closest('a[data-mswq-back="true"]');
+ if(back&&!e.defaultPrevented&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
+  if(history.length>1){e.preventDefault();history.back();return;}
+  try{const r=new URL(document.referrer);if(r.origin===location.origin&&r.href!==location.href){e.preventDefault();location.assign(r.href);return;}}catch{}
+  // A directly opened link has no preceding MSWQ page; href="/" is the fallback.
+ }
  const b=e.target.closest('[data-action]');if(!b)return;
  try{await perform(b.dataset.action,b.dataset.id,b)}catch(err){console.error(err);toast('操作失败：'+err.message)}
 });
