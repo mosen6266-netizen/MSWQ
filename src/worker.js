@@ -273,6 +273,24 @@ async function handler(req,env){
  if(method==='GET'&&p==='/'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return html(ASSETS.html);
  // Render all published content within the MSWQ shell; the frontend selects the
  // full-width embedded DOCX view without redirecting or creating another tab.
+ // Legacy flows use the exact exported HTML instead of being redrawn by the generic reader.
+ if(method==='GET'&&p.startsWith('/view/')){
+  const slug=decodeURIComponent(p.slice('/view/'.length));
+  const item=await env.DB.prepare("SELECT id,kind,status,title,content FROM items WHERE slug=? AND status='published'").bind(slug).first();
+  if(item&&['personal','group'].includes(item.kind)){
+   const exact=await env.FILES.get('published-readers/'+item.id+'.html');
+   if(exact){
+    const signature=base64url(await digest(item.title+'\0'+item.content));
+    if(exact.customMetadata?.signature===signature&&exact.customMetadata?.kind===item.kind){
+     return new Response(exact.body,{status:200,headers:{
+      'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',
+      'referrer-policy':'strict-origin-when-cross-origin',
+      'content-security-policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+     }});
+    }
+   }
+  }
+ }
  if(method==='GET'&&(p==='/'||p==='/admin'||p==='/admin/'||p.startsWith('/view/')))return html(ASSETS.html);
  if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
