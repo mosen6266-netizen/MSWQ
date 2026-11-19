@@ -137,6 +137,7 @@ function validateSpecialContent(incoming){
  }
  return '';
 }
+function frontTabForItem(item){return item.kind==='document'?(item.category||'document'):item.kind;}
 function record(r,includeContent=true){
  if(!r)return null;
  const z={id:r.id,kind:r.kind,status:r.status,title:r.title,slug:r.slug,description:r.description,category:r.category,tags:JSON.parse(r.tags||'[]'),sort_order:r.sort_order,thumbnail:r.thumbnail,created_at:r.created_at,updated_at:r.updated_at,version:r.version};
@@ -421,6 +422,23 @@ async function handler(req,env){
    env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('type_order',JSON.stringify(type_order))
   ]);
   return out({ok:true,deleted_types,type_order});
+ }
+ if(method==='PUT'&&p==='/api/admin/items/order'){
+  const body=await parse(req,180000);
+  const category=String(body?.category||''),order=body?.order,versions=body?.versions;
+  if(!/^(?:personal|group|document|page|link|bookmarks|profile|custom_[a-f0-9]{32})$/.test(category))return fail('分类编号不正确',400);
+  if(!Array.isArray(order)||order.length<2||order.length>500||order.some(id=>!(/^[a-f0-9-]{36}$/i.test(String(id))))||new Set(order).size!==order.length)return fail('排序内容列表无效',400);
+  if(!versions||typeof versions!=='object'||Array.isArray(versions))return fail('排序版本信息缺失，请刷新列表',400);
+  const existing=await env.DB.prepare('SELECT id,kind,category,version,sort_order FROM items').all();
+  const group=(existing.results||[]).filter(item=>frontTabForItem(item)===category);
+  if(group.length!==order.length||!group.every(item=>order.includes(item.id)))return fail('分类中的内容已变化，请刷新内容列表后重试',409);
+  if(group.some(item=>!Number.isInteger(versions[item.id])||versions[item.id]!==item.version))return fail('有内容已被其他操作修改，请刷新后重新排序',409);
+  const byId=new Map(group.map(item=>[item.id,item]));
+  const statements=order.map((id,i)=>env.DB.prepare('UPDATE items SET sort_order=?, version=version+1 WHERE id=? AND version=?')
+   .bind((i+1)*10,id,byId.get(id).version));
+  const results=await env.DB.batch(statements);
+  if(results.some(result=>Number(result.meta?.changes??0)!==1))return fail('排序更新未完全成功，请刷新列表核对',409);
+  return out({ok:true,category,order});
  }
  if(method==='GET'&&p==='/api/admin/items'){
   const rows=await env.DB.prepare('SELECT * FROM items ORDER BY sort_order ASC,updated_at DESC').all();
