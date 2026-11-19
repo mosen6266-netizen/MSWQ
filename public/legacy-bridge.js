@@ -14,11 +14,36 @@ modal.id='mswqBridgeModal';
 modal.style.cssText='position:fixed;inset:0;z-index:999999;background:#000d;display:none;align-items:center;justify-content:center;padding:20px;font-family:system-ui,Microsoft YaHei,sans-serif';
 document.body.appendChild(modal);
 const btn=document.createElement('button');
-btn.textContent='↗ 发布到 MSWQ';
+btn.textContent='☁ 保存草稿 / 发布到前端';
 btn.title='把当前编辑器中的群剧本或个人流程保存到 MSWQ 云端';
 btn.style.cssText='position:fixed;right:22px;bottom:22px;z-index:99999;background:#176345;color:#fff;border:1px solid #53bf8c;border-radius:12px;padding:12px 17px;font-size:13px;font-weight:800;box-shadow:0 9px 30px #0008;cursor:pointer';
 document.body.appendChild(btn);
 btn.onclick=()=>{show();};
+// Keep a visible publish control beside the personal-flow editing tools.
+const personalActions=document.querySelector('.p-side-action-grid');
+if(personalActions){
+ const quick=document.createElement('button');
+ quick.type='button';quick.className='p-btn small';quick.textContent='☁ 保存 / 发布到前端';
+ quick.style.cssText='grid-column:1 / -1;background:#18563e;border:1px solid #4caf83;color:#f6fff8;font-weight:800';
+ quick.onclick=show;personalActions.appendChild(quick);
+}
+// The multi-flow export dialog can also publish exactly the checked flows.
+// Exporting HTML is deliberately kept separate from publishing.
+const mergeExport=document.getElementById('pMergeReaderExport');
+if(mergeExport){
+ const mergePublish=document.createElement('button');
+ mergePublish.id='mswqPublishSelected';
+ mergePublish.type='button';mergePublish.className='p-btn green';
+ mergePublish.textContent='☁ 发布所选到前端';
+ mergePublish.title='把勾选的每一套个人流程发布为独立网页，可在MSWQ首页看到';
+ mergeExport.insertAdjacentElement('afterend',mergePublish);
+ const info=document.createElement('div');
+ info.id='mswqMergePublishResults';
+ info.style.cssText='font-size:12px;line-height:1.75;color:#b8e8cc;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto';
+ mergeExport.closest('.p-dialog-body')?.insertBefore(info,mergeExport.parentElement);
+ mergePublish.onclick=publishMergeSelected;
+}
+
 async function req(path,options={}){
  const r=await fetch(path,{credentials:'same-origin',cache:'no-store',...options});
  const j=await r.json();if(!r.ok)throw new Error(j.error||'请求失败');
@@ -78,18 +103,38 @@ function convert(v,kind){
   content:{blocks:arr,members:(v.members||[]).map(m=>({id:m.id,name:m.name,label:m.no||'',role:m.role||''})),
    keywords:v.keywords||[],legacyMeta:{navOrder:v.navOrder||[],navDisabled:v.navDisabled||[],customNavGroups:v.customNavGroups||[],lang:v.lang||''}}};
 }
+let bridgePublishing=false;
 async function sync(all,publish){
- await sleep(350);
+ if(bridgePublishing)return;
  const choice=Number($('#mswqBridgeChoose')?.value||0);
- // Re-read saved browser data to include last changes.
- const current=files().find(x=>x.kind===all[choice].kind&&x.data.id===all[choice].data.id)||all[choice];
+ const selected=all[choice];if(!selected)return report('请先选择一套流程');
+ bridgePublishing=true;
+ $('#mswqPublish')?.setAttribute('disabled','');
+ $('#mswqDraft')?.setAttribute('disabled','');
+ try{await syncOne(selected,publish,report)}
+ finally{
+  bridgePublishing=false;
+  $('#mswqPublish')?.removeAttribute('disabled');
+  $('#mswqDraft')?.removeAttribute('disabled');
+ }
+}
+async function syncOne(selected,publish,notify=report){
+ if(!selected)return {ok:false,error:'流程不存在'};
+ // The personal editor debounces local changes; flush immediately before reading.
+ if(selected.kind==='personal'&&typeof window.mswqSavePersonalFlowNow==='function'){
+  if(window.mswqSavePersonalFlowNow()===false){
+   notify('编辑内容未能保存到本机，请先导出备份并检查存储空间');
+   return {ok:false,error:'本地保存失败'};
+  }
+ }
+ await sleep(350);
+ const current=files().find(x=>x.kind===selected.kind&&x.data.id===selected.data.id)||selected;
  const {kind,data}=current;
- if(!data?.id)return report('没有有效流程标识，请先保存编辑器内容');
+ if(!data?.id){notify('没有有效流程标识，请先保存编辑器内容');return {ok:false,error:'流程ID缺失'}}
  const item=convert(data,kind),mapKey=kind+':'+data.id,remembered=mapped(),old=remembered[mapKey];
- $('#mswqPublish').disabled=true;$('#mswqDraft').disabled=true;
  const warnings=[];
  try{
-  report('正在同步话术、步骤和图片附件…');
+  notify('正在同步「'+item.title+'」的话术、步骤和图片附件…');
   for(let i=0;i<item.content.blocks.length;i++){
    const b=item.content.blocks[i],sourceFiles=b._sourceFiles||[];
    delete b._sourceFiles;
@@ -101,7 +146,7 @@ async function sync(all,publish){
      if(!blob)throw Error('原文件不可读取');
      const media=await uploadBlob(blob,file.name||'附件',file.type||blob.type);
      b.files.push(media);
-    }catch(err){warnings.push(file.name+': '+err.message)}
+    }catch(err){warnings.push((file.name||'附件')+': '+err.message)}
    }
   }
   if(publish)item.status='published';
@@ -122,14 +167,60 @@ async function sync(all,publish){
   remembered[mapKey]={id:saved.id,slug:saved.slug};
   localStorage.setItem(KEY,JSON.stringify(remembered));
   const publicUrl=location.origin+'/view/'+encodeURIComponent(saved.slug);
-  report((publish?'已成功发布':'已保存到草稿')+'：'+saved.title+(warnings.length?'\n⚠ '+warnings.length+' 个附件未同步，请在 MSWQ 内容管理中手动补上传':'')+'\n访问地址：'+publicUrl);
-  const t=$('#mswqBridgeMsg');
-  const a=document.createElement('a');a.href=publicUrl;a.target='_blank';a.rel='noopener';a.textContent='打开 '+(publish?'公开页面':'流程链接（草稿暂不可查看）')+' ↗';a.style.cssText='display:block;color:#92dcb4;margin-top:8px';
-  t.appendChild(a);
- }catch(err){report('同步失败：'+(err?.message||String(err)))}
- finally{
-  if($('#mswqPublish'))$('#mswqPublish').disabled=false;
-  if($('#mswqDraft'))$('#mswqDraft').disabled=false;
+  notify((publish?'已成功发布':'已保存到草稿')+'：'+saved.title+(warnings.length?'\\n⚠ '+warnings.length+' 个附件未同步，请在 MSWQ 素材库补充':'')+'\\n访问地址：'+publicUrl);
+  if(notify===report){
+   const target=$('#mswqBridgeMsg');
+   if(target){
+    const a=document.createElement('a');a.href=publicUrl;a.target='_blank';a.rel='noopener';
+    a.textContent=publish?'查看已发布的前台页面 ↗':'流程链接（草稿尚未公开）';
+    a.style.cssText='display:block;color:#92dcb4;margin-top:8px';target.appendChild(a);
+   }
+  }
+  return {ok:true,saved,url:publicUrl,warnings};
+ }catch(err){
+  const message=err?.message||String(err);
+  notify('同步失败：'+message);return {ok:false,error:message};
  }
 }
+async function publishMergeSelected(){
+ if(bridgePublishing)return;
+ const flowIds=typeof window.mswqSelectedPersonalFlowIds==='function'
+  ?window.mswqSelectedPersonalFlowIds()
+  :[...document.querySelectorAll('#pMergeReaderList [data-merge-id]:checked')].map(x=>x.dataset.mergeId);
+ if(!flowIds.length){alert('请先勾选需要发布的个人流程');return}
+ const all=files().filter(x=>x.kind==='personal');
+ const selected=flowIds.map(id=>all.find(x=>x.data.id===id)).filter(Boolean);
+ if(!selected.length){alert('所选流程尚未保存，请先保存内容');return}
+ const info=$('#mswqMergePublishResults'),button=$('#mswqPublishSelected');
+ const successes=[],failures=[];
+ bridgePublishing=true;button.disabled=true;
+ try{
+  if(info)info.textContent='正在发布 '+selected.length+' 套个人流程…';
+  for(let i=0;i<selected.length;i++){
+   const result=await syncOne(selected[i],true,message=>{
+    if(info)info.textContent='('+ (i+1) +'/'+selected.length+') '+message;
+   });
+   if(result.ok)successes.push(result);
+   else failures.push((selected[i].data.name||'未命名')+'：'+result.error);
+  }
+  if(info){
+   info.replaceChildren();
+   const heading=document.createElement('div');
+   heading.textContent='已发布 '+successes.length+' 套'+(failures.length?'，失败 '+failures.length+' 套':'')+'。每套流程都有独立访问链接：';
+   info.appendChild(heading);
+   for(const result of successes){
+    const a=document.createElement('a');a.href=result.url;a.target='_blank';a.rel='noopener';
+    a.textContent='↗ '+result.saved.title;
+    a.style.cssText='display:block;color:#8fe1b0;text-decoration:underline;margin-top:5px';info.appendChild(a);
+   }
+   if(failures.length){
+    const err=document.createElement('div');err.textContent=failures.join('\\n');
+    err.style.color='#ffc5c5';info.appendChild(err);
+   }
+  }
+ }finally{
+  bridgePublishing=false;button.disabled=false;
+ }
+}
+
 })();
