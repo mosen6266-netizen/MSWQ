@@ -17,6 +17,12 @@ MSWQ 使用 **Cloudflare Workers + 独立 D1 + 独立 R2**。后台编辑流程�
 - DOCX 访客工作台（无管理员按钮）：\`/docx\`
 - 已发布的 DOCX 模板卡片：\`/view/docx-workspace\`
 
+## 已修复：新内容类型发布失败（D1 约束升级）
+
+旧 MSWQ D1 的 `items.kind` 仍有只允许 `personal/group/document/page/link` 的 CHECK 约束，导致上线个人名片、网址收藏及自定义分类后，点「保存并发布」返回 HTTP 500。已在独立的 `mswq_db` 中备份原有条目、复制校验、重建 `items` 表并重建 `idx_items_public` 索引；改由 Worker 的 `normalizeItem` 及 `validateSpecialContent` 验证合法内容类型。现有已发布页面、内容 ID、路径和版本保留。生产库已完成升级，不要重复执行迁移。
+
+`schema.sql` 已同步适配新数据库；`migrations/002-expand-item-kinds.sql` 说明已有旧库如何备份、创建新表，并在验证后手工完成替换。数据库验证包括模拟 `profile`、`bookmarks` 和 `custom_<id>` 三种已发布内容的写入/读取/删除，所有临时数据均已清理。
+
 ## 网址收藏和个人名片模块（v1.2.0）
 
 后台直接入口：
