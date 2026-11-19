@@ -355,44 +355,71 @@ async function handler(req,env){
  if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='POST'&&p==='/api/admin/logout')return out({ok:true,testMode:MSWQ_TEST_OPEN_ADMIN},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
  if(method==='POST'&&p==='/api/admin/types'){
-  const body=await parse(req,10000);
-  const name=cleanString(body?.name,30);
-  if(!name||String(body?.name||'').trim().length>30)return fail('分类名称须为 1–30 个字符');
-  if(/[\u0000-\u001f\u007f<>]/.test(name))return fail('分类名称包含不支持的字符');
-  const settings=await config(env);
-  const categories=settings.custom_types;
-  const reserved=['个人流程','群剧本','DOCX 文档','自定义页面','外部工具','网址收藏','个人名片'];
-  if([...reserved,...categories.map(x=>x.name)].some(x=>x.toLocaleLowerCase()===name.toLocaleLowerCase()))return fail('这个分类已经存在',409);
-  if(categories.length>=100)return fail('最多创建 100 个自定义分类',409);
-  const type={id:'custom_'+crypto.randomUUID().replace(/-/g,''),name};
-  categories.push(type);
-  await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('custom_types',JSON.stringify(categories)).run();
-  return out({ok:true,type,custom_types:categories},201);
+  const body=await parse(req,10000),settings=await config(env),bad=checkTypeName(settings,'',body?.name);
+  if(bad)return fail(bad,400);
+  if(settings.custom_types.length>=100)return fail('自定义分类最多100个',409);
+  const type={id:'custom_'+crypto.randomUUID().replace(/-/g,''),name:String(body.name).trim()};
+  const custom_types=[...settings.custom_types,type];
+  const type_order=[...new Set([...settings.type_order,...allTypeIds(settings)])].filter(id=>!settings.deleted_types.includes(id)).concat(type.id);
+  await env.DB.batch([
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('custom_types',JSON.stringify(custom_types)),
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('type_order',JSON.stringify(type_order))
+  ]);
+  return out({ok:true,type,custom_types,type_order},201);
+ }
+ if(method==='PUT'&&p==='/api/admin/types/name'){
+  const body=await parse(req,10000),id=String(body?.id||''),settings=await config(env);
+  if(!allTypeIds(settings).includes(id))return fail('分类不存在',404);
+  const bad=checkTypeName(settings,id,body?.name);if(bad)return fail(bad,400);
+  const name=String(body.name).trim();
+  let custom_types=settings.custom_types,type_labels=settings.type_labels;
+  if(Object.hasOwn(CORE_TYPE_LABELS,id)){
+   type_labels={...settings.type_labels,[id]:name};
+   await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('type_labels',JSON.stringify(type_labels)).run();
+  }else{
+   custom_types=settings.custom_types.map(x=>x.id===id?{...x,name}:x);
+   await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('custom_types',JSON.stringify(custom_types)).run();
+  }
+  return out({ok:true,custom_types,type_labels});
+ }
+ if(method==='PUT'&&p==='/api/admin/types/order'){
+  const body=await parse(req,12000),settings=await config(env),order=body?.order;
+  const ids=allTypeIds(settings).filter(id=>!settings.deleted_types.includes(id));
+  if(!Array.isArray(order)||order.length!==ids.length||new Set(order).size!==ids.length||!ids.every(id=>order.includes(id)))return fail('分类已变化，请刷新后重试',409);
+  await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('type_order',JSON.stringify(order)).run();
+  return out({ok:true,type_order:order});
+ }
+ if(method==='PUT'&&p==='/api/admin/types/restore'){
+  const body=await parse(req,10000),id=String(body?.id||''),settings=await config(env);
+  if(!allTypeIds(settings).includes(id)||!settings.deleted_types.includes(id))return fail('没有找到已删除分类',404);
+  const deleted_types=settings.deleted_types.filter(x=>x!==id),hidden_types=settings.hidden_types.filter(x=>x!==id);
+  const type_order=[...settings.type_order.filter(x=>x!==id),id];
+  await env.DB.batch([
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('deleted_types',JSON.stringify(deleted_types)),
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('hidden_types',JSON.stringify(hidden_types)),
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('type_order',JSON.stringify(type_order))
+  ]);
+  return out({ok:true,deleted_types,hidden_types,type_order});
  }
  if(method==='PUT'&&p==='/api/admin/types/visibility'){
-  const body=await parse(req,10000);
-  const id=String(body?.id||''),hidden=body?.hidden;
-  if(typeof hidden!=='boolean')return fail('请明确选择显示或隐藏分类');
-  const settings=await config(env);
-  const allowed=['personal','group','document','page','link','bookmarks','profile',...settings.custom_types.map(t=>t.id)];
-  if(!allowed.includes(id))return fail('分类不存在',404);
-  const values=new Set(settings.hidden_types);
-  if(hidden)values.add(id);else values.delete(id);
-  await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('hidden_types',JSON.stringify([...values])).run();
-  return out({ok:true,hidden_types:[...values]});
+  const body=await parse(req,10000),id=String(body?.id||''),hidden=body?.hidden,settings=await config(env);
+  if(typeof hidden!=='boolean')return fail('请选择显示或隐藏',400);
+  if(!allTypeIds(settings).includes(id)||settings.deleted_types.includes(id))return fail('分类不存在',404);
+  const hidden_types=[...new Set(hidden?[...settings.hidden_types,id]:settings.hidden_types.filter(x=>x!==id))];
+  await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('hidden_types',JSON.stringify(hidden_types)).run();
+  return out({ok:true,hidden_types});
  }
- if(method==='DELETE'&&/^\/api\/admin\/types\/custom_[a-f0-9]{32}$/.test(p)){
-  const id=p.slice('/api/admin/types/'.length);
-  const settings=await config(env);
-  if(!settings.custom_types.some(t=>t.id===id))return fail('分类不存在',404);
-  const used=await env.DB.prepare('SELECT COUNT(*) AS total FROM items WHERE kind=?').bind(id).first();
-  if((used?.total||0)>0)return fail('此分类仍有 '+used.total+' 个内容，请先转换这些内容的类型，或者在分类管理中隐藏该分类',409);
-  const next=settings.custom_types.filter(t=>t.id!==id),hidden=settings.hidden_types.filter(t=>t!==id);
+ const typeDelete=p.match(/^\/api\/admin\/types\/(personal|group|document|page|link|bookmarks|profile|custom_[a-f0-9]{32})$/);
+ if(method==='DELETE'&&typeDelete){
+  const id=typeDelete[1],settings=await config(env);
+  if(!allTypeIds(settings).includes(id))return fail('分类不存在',404);
+  if(settings.deleted_types.includes(id))return fail('分类已删除',409);
+  const deleted_types=[...settings.deleted_types,id],type_order=settings.type_order.filter(x=>x!==id);
   await env.DB.batch([
-   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('custom_types',JSON.stringify(next)),
-   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('hidden_types',JSON.stringify(hidden))
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('deleted_types',JSON.stringify(deleted_types)),
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('type_order',JSON.stringify(type_order))
   ]);
-  return out({ok:true,custom_types:next,hidden_types:hidden});
+  return out({ok:true,deleted_types,type_order});
  }
  if(method==='GET'&&p==='/api/admin/items'){
   const rows=await env.DB.prepare('SELECT * FROM items ORDER BY sort_order ASC,updated_at DESC').all();
@@ -402,7 +429,7 @@ async function handler(req,env){
   const body=await parse(req);
   const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
   const item=normalizeItem(body);
-  if(item.kind.startsWith('custom_')&&!(await config(env)).custom_types.some(t=>t.id===item.kind))return fail('自定义分类不存在，请刷新后台后再选择');
+  const availability=await config(env);if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||availability.deleted_types.includes(item.kind))return fail('分类已删除，请恢复后再创建',409);
   try{return out({ok:true,item:await saveItem(env,item)},201)}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请更换 slug',409);throw e;}
  }
  const match=p.match(/^\/api\/admin\/items\/([a-f0-9-]{32,40})$/);
@@ -415,7 +442,7 @@ async function handler(req,env){
    if(body.version!==old.version)return fail('版本已更新，请刷新后重试，避免覆盖其他修改',409);
    const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
    const item=normalizeItem(body,id);
-   if(item.kind.startsWith('custom_')&&!(await config(env)).custom_types.some(t=>t.id===item.kind))return fail('自定义分类不存在，请刷新后台后再选择');
+   const availability=await config(env);if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||(availability.deleted_types.includes(item.kind)&&old.kind!==item.kind))return fail('分类已删除，请先恢复',409);
    try{return out({ok:true,item:await saveItem(env,item,old)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
   }
   if(method==='DELETE'){
