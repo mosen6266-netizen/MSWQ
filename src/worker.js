@@ -177,7 +177,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.1',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.2',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -246,7 +246,7 @@ async function handler(req,env){
    const body=await parse(req);
    if(body.version!==old.version)return fail('版本已更新，请刷新后重试，避免覆盖其他修改',409);
    const item=normalizeItem(body,id);
-   try{return out({ok:true,item:await saveItem(env,item)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复',409);throw e;}
+   try{return out({ok:true,item:await saveItem(env,item,old)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
   }
   if(method==='DELETE'){
    await env.DB.prepare('INSERT INTO revisions(id,item_id,version,data,created_at) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),id,old.version,JSON.stringify(record(old)),iso()).run();
