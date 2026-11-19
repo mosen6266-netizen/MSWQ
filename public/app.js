@@ -690,6 +690,22 @@ case 'retry-bookmarks':{
   if(id==='assets')await loadAssets();
   adminRender();break;
  }
+ case 'new-html-card':await showQuickHtmlCreate(id||'');break;
+ case 'publish-html-quick':{
+  const htmlAssetId=$('#quickHtmlAsset')?.value||'',title=($('#quickHtmlTitle')?.value||'').trim(),category=$('#quickHtmlCategory')?.value||'';
+  if(!S.assets.some(a=>a.id===htmlAssetId&&a.mime==='text/html'))return toast('请选择文件库中已上传的 HTML');
+  if(!title)return toast('请填写卡片名称');
+  if(!category)return toast('请选择前台分类');
+  el.disabled=true;
+  try{
+   const body={kind:'html',status:'published',title,category,description:($('#quickHtmlDescription')?.value||'').trim(),sort_order:1000,
+    slug:'html-'+crypto.randomUUID().replace(/-/g,'').slice(0,16),content:{htmlAssetId},tags:[]};
+   const result=await api('/api/admin/items',{method:'POST',...jsonBody(body)});
+   closeModal();await loadAdmin();S.tab='library';adminRender();
+   openModal('<h2>HTML 卡片已发布</h2><p>「'+esc(title)+'」已经放在「'+esc(typeNames[category]||category)+'」分类。点击卡片会在新标签页打开完整 HTML 页面。</p><div class="flex end"><button class="btn" data-action="copy-html-asset" data-id="'+esc(htmlAssetId)+'">复制直达链接</button><a class="btn green" href="'+esc(shareUrl(result.item))+'" target="_blank" rel="noopener noreferrer">打开完整页面</a><button class="btn" data-action="close-modal">完成</button></div>');
+  }finally{el.disabled=false;}
+  break;
+ }
  case 'open-docx-create':await showQuickDocxCreate();break;
  case 'publish-docx-quick':{
   const name=($('#quickDocxTitle')?.value||'').trim(),templateId=$('#quickDocxTemplate')?.value||'';
@@ -722,7 +738,7 @@ case 'retry-bookmarks':{
  }
  case 'new-item':newItem();break;
  case 'new-special':newItem(id);break;
- case 'edit-item':S.returnTab=S.tab;S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';if(S.edit?.kind==='document'){await loadDocxTemplates();S.edit.category=S.edit.category||defaultDocxCategory();}adminRender();break;
+ case 'edit-item':S.returnTab=S.tab;S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';if(S.edit?.kind==='document'){await loadDocxTemplates();S.edit.category=S.edit.category||defaultDocxCategory();}if(S.edit?.kind==='html')await loadAssets();adminRender();break;
  case 'add-block':S.edit.content.blocks.push(blankBlock(id));adminRender();break;
  case 'remove-block':S.edit.content.blocks.splice(Number(id),1);adminRender();break;
  case 'move-block':{
@@ -832,12 +848,13 @@ case 'retry-bookmarks':{
   await api('/api/admin/items/'+id,{method:'PUT',...jsonBody(item)});await refreshPanel();toast(item.status==='published'?'内容已发布':'内容已下架');break;
  }
  case 'copy-url':
-  await navigator.clipboard.writeText(location.origin+itemHref(S.items.find(x=>x.id===id)));toast('公开链接已复制');break;
+  await navigator.clipboard.writeText(shareUrl(S.items.find(x=>x.id===id)));toast('公开链接已复制');break;
  case 'copy-current':{
-  await navigator.clipboard.writeText(location.origin+itemHref(S.edit));toast('链接已复制');break;
+  await navigator.clipboard.writeText(shareUrl(S.edit));toast('链接已复制');break;
  }
  case 'preview-item':
   if(!S.edit)return;
+  if(S.edit.kind==='html'){const direct=shareUrl(S.edit);if(direct)window.open(direct,'_blank','noopener,noreferrer');else toast('请选择 HTML 文件');break;}
   await showReader(S.edit.slug,S.edit);break;
  case 'delete-item':{
   if(!S.edit?.id||!confirm('确定永久删除「'+S.edit.title+'」？删除后公开链接将失效。'))return;
@@ -861,6 +878,7 @@ case 'retry-bookmarks':{
   S.picking=null;closeModal();adminRender();break;
  case 'close-modal':closeModal();break;
  case 'copy-asset':await navigator.clipboard.writeText(location.origin+asset(id));toast('素材链接已复制');break;
+ case 'copy-html-asset':await navigator.clipboard.writeText(htmlUrl(id));toast('HTML 直达链接已复制');break;
  case 'delete-asset':
   if(!confirm('确认删除这个文件？'))return;
   await api('/api/admin/assets/'+id,{method:'DELETE'});await loadAssets();adminRender();toast('文件已删除');break;
@@ -885,7 +903,11 @@ async function saveCurrent(publish){
   const link=item.kind==='link'?item.content.url:item.content.docUrl;
   if(link&&!urlOk(link))return toast('链接地址必须以 https:// 或 http:// 开头');
  }
- if(item.kind==='document'){
+ if(item.kind==='html'){
+   if(!htmlUrl(item.content?.htmlAssetId))return toast('请先选择已上传 HTML 文件');
+   if(!orderedCategoryIds(S.settings).includes(item.category)||(S.settings?.hidden_types||[]).includes(item.category))return toast('请选择有效且未隐藏的前台分类');
+  }
+  if(item.kind==='document'){
   if(!S.docxTemplatesReady)await loadDocxTemplates();
   if(!S.docxTemplates.some(t=>t.id===item.content?.templateId))return toast('请选择一个现有 DOCX 模板');
   item.content.docUrl=item.content.docUrl||'/docx';
@@ -1021,7 +1043,7 @@ document.addEventListener('input',e=>{
   else if(key==='memberNames'){
    const names=t.value.split(/[\n,，]/).map(x=>x.trim()).filter(Boolean);
    S.edit.content.members=names.map((name,i)=>({id:S.edit.content.members.find(m=>m.name===name)?.id||crypto.randomUUID(),name,label:(i+1)+'号'}));
-  }else if(['docUrl','templateId','url'].includes(key))S.edit.content[key]=t.value;
+  }else if(['docUrl','templateId','url','htmlAssetId'].includes(key))S.edit.content[key]=t.value;
   else S.edit[key]=t.value;
  }
  if(t.dataset.block!==undefined&&S.edit){
@@ -1062,6 +1084,17 @@ document.addEventListener('change',async e=>{
   }catch(err){console.error(err);t.disabled=false;toast((media==='video'?'视频':'图片')+'上传失败：'+err.message)}
   return;
  }
+ if(t.id==='htmlEditorUpload'&&S.edit?.kind==='html'){
+  const file=t.files?.[0];if(!file)return;
+  if(!/\.html?$/i.test(file.name)||!file.size||file.size>35000000)return toast('仅支持完整 .html/.htm 文件，最大 35MB');
+  t.disabled=true;
+  try{
+   const data=await api('/api/admin/assets',{method:'POST',headers:{'content-type':'text/html','x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+   S.edit.content.htmlAssetId=data.asset.id;await loadAssets();adminRender();toast('HTML 上传成功，请保存并发布');
+  }catch(err){t.disabled=false;toast('HTML 上传失败：'+err.message);}
+  return;
+ }
+ if(t.dataset.field==='htmlAssetId'&&S.edit?.kind==='html'){S.edit.content.htmlAssetId=t.value;return;}
  if(t.dataset.profileIndex!==undefined&&t.dataset.prop==='type'&&S.edit?.kind==='profile'){
   const entry=S.edit.content.fields?.[Number(t.dataset.profileIndex)];
   if(entry){if(entry.type!==t.value&&['image','video'].includes(entry.type))entry.assetId='';entry.type=t.value;adminRender();}
