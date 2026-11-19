@@ -2353,6 +2353,7 @@ function pSaveNow(){
  try{localStorage.setItem(PKEY,JSON.stringify(pState));pSetStatus('✓ 已保存到本机 · '+new Date().toLocaleTimeString('zh-CN'));return true}
  catch(e){console.error(e);pSetStatus('⚠ 保存失败，请立即导出备份');pAlert('浏览器保存空间不足，文字可能尚未保存。请立即导出备份');return false}
 }
+window.mswqSavePersonalFlowNow=()=>pSaveNow();
 function pSave(){const f=pFlow();if(f)f.updatedAt=Date.now();pSetStatus('正在保存…');clearTimeout(pSavingTimer);pSavingTimer=setTimeout(pSaveNow,180)}
 window.addEventListener('pagehide',()=>pSaveNow());
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')pSaveNow()});
@@ -2631,6 +2632,41 @@ async function pImportFile(file){
  }catch(err){console.error(err);pSetStatus('导入失败');pAlert('导入失败：'+String(err.message||err))}
  finally{p$('pImportFile').value='';p$('pImportReader').value='';p$('personalPage').querySelectorAll('[data-p-import-mobile]').forEach(x=>x.value='')}
 }
+// Local copies ensure personal-flow HTML export works independently of the group editor script.
+function offlineReaderEscape(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function offlineReaderAttachment(file){
+ const esc=offlineReaderEscape,name=esc(file?.name||'附件'),data=String(file?.data||''),mime=String(file?.type||'');
+ // Keep big offline readers small: data already lives in the embedded import-compatible JSON.
+ const small=data.length<260000&&/^data:(?:image\/|application\/pdf|text\/)/i.test(data);
+ const preview=small&&/^data:image\/(?:png|jpeg|gif|webp|bmp)/i.test(data)?'<img class="offline-thumb" src="'+esc(data)+'" alt="'+name+'" loading="lazy">':'';
+ return '<div class="offline-attachment">📎 '+name+(small?'<a class="offline-download" href="'+esc(data)+'" download="'+name+'">打开 / 保存</a>':'')+preview+'</div>';
+}
+
+function personalOfflineReaderMarkup(packed){
+ const e=offlineReaderEscape,flows=packed.flows||[],attachments=packed.attachments||{};
+ const types={speech:'双语话术',note:'操作提示',wait:'等待时间',link:'链接按钮',attachment:'独立附件',section:'流程分段'};
+ const tabs=flows.map((f,i)=>'<a class="reader-flow-tab" href="#offline-flow-'+i+'">'+e(f.name||'未命名流程')+'</a>').join('');
+ const cards=flows.map((f,fi)=>{
+  let speechNo=0;
+  const rows=(f.steps||[]).map((st,i)=>{
+   const id='offline-step-'+fi+'-'+i;
+   const isSpeech=st.type==='speech';if(isSpeech)speechNo++;
+   const title=isSpeech?(speechNo+'. '+(st.title||types.speech)):types[st.type]||'步骤';
+   let content='';
+   if(isSpeech||st.type==='section')content='<div class="langs"><div class="lang"><div class="label">中文</div><div class="text">'+e(st.zh||'')+'</div></div><div class="lang"><div class="label">English</div><div class="text">'+e(st.en||'')+'</div></div></div>';
+   else if(st.type==='note'||st.type==='attachment')content='<div class="text">'+e(st.content||'')+'</div>';
+   else if(st.type==='wait')content='<div class="text">计划等待：'+e(String(st.seconds||0))+' 秒</div>';
+   const links=(st.links||[]).map(l=>{const url=String(l.url||'');return /^https?:\/\//i.test(url)?'<a class="btn" href="'+e(url)+'" target="_blank" rel="noopener noreferrer">🔗 '+e(l.en||l.zh||'打开链接')+'</a>':''}).join('');
+   const files=(st.files||[]).map(meta=>offlineReaderAttachment({...meta,...(attachments[meta.id]||{})})).join('');
+   return '<section class="card '+e(st.type||'')+'" id="'+id+'">'+(st.type==='note'?'':'<div class="meta '+(isSpeech?'speech-title':'')+'">'+e(title)+'</div>')+content+(links?'<div class="linkrow">'+links+'</div>':'')+(files?'<div class="files">'+files+'</div>':'')+'</section>';
+  }).join('');
+  // Other flows remain accessible without JS, including in iOS/Android file previews.
+  return '<section class="offline-flow" id="offline-flow-'+fi+'"><h2 class="offline-heading">'+e(f.name||'未命名流程')+'</h2>'+(f.description?'<p class="muted">'+e(f.description)+'</p>':'')+(rows||'<div class="muted">暂无步骤</div>')+'</section>';
+ }).join('');
+ return {tabs,body:cards||'<p class="muted">暂无流程</p>'};
+}
+
+
 function pReaderHtml(packed){
  const f=packed.flows[0];const offline=personalOfflineReaderMarkup(packed);const escapedJson=JSON.stringify(packed).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${pEsc(f.name)} · 个人流程查看版</title><style>
@@ -2776,6 +2812,8 @@ header{display:block;position:sticky;top:0;z-index:5;padding:10px 18px 11px;min-
 }
 // 合并查看版支持同时选择多套流程，沿用原有附件完整打包、查看版 HTML 回导格式。
 let pMergeSelected=new Set();
+// Expose the selected-flow IDs to the MSWQ publishing bridge without leaking editor internals.
+window.mswqSelectedPersonalFlowIds=()=>[...pMergeSelected];
 function pMergeListRender(){
  const q=p$('pMergeReaderSearch').value.trim().toLowerCase(),list=p$('pMergeReaderList');
  const flows=pOrderedFlows().filter(f=>[f.name,f.category,(f.tags||[]).join(' '),f.description].join(' ').toLowerCase().includes(q));
