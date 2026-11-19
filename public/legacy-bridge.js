@@ -125,10 +125,16 @@ async function sync(all,publish){
 }
 async function syncOne(selected,publish,notify=report){
  if(!selected)return {ok:false,error:'流程不存在'};
- // Flush the group editor's debounced save, but keep the live imported flow
- // publishable if embedded media makes the localStorage quota too small.
- const groupLocalUnsaved=selected.kind==='group'&&typeof window.mswqSaveGroupScriptsNow==='function'
-  ?window.mswqSaveGroupScriptsNow()===false:false;
+ // Flush the durable IndexedDB archive before synchronizing to Cloudflare.
+ // The old localStorage quota cannot make an HTML import disappear on reload.
+ let groupLocalUnsaved=false;
+ if(selected.kind==='group'){
+  if(typeof window.mswqWhenGroupReady==='function')await window.mswqWhenGroupReady();
+  if(typeof window.mswqSaveGroupScriptsDurably==='function')
+   groupLocalUnsaved=(await window.mswqSaveGroupScriptsDurably())===false;
+  else if(typeof window.mswqSaveGroupScriptsNow==='function')
+   groupLocalUnsaved=window.mswqSaveGroupScriptsNow()===false;
+ }
  // The personal editor debounces local changes; flush immediately before reading.
  if(selected.kind==='personal'&&typeof window.mswqSavePersonalFlowNow==='function'){
   if(window.mswqSavePersonalFlowNow()===false){
@@ -199,9 +205,10 @@ async function syncOne(selected,publish,notify=report){
    saved=result.item;
   }
   remembered[mapKey]={id:saved.id,slug:saved.slug};
-  localStorage.setItem(KEY,JSON.stringify(remembered));
+  try{localStorage.setItem(KEY,JSON.stringify(remembered))}
+  catch(e){console.warn('浏览器存储已满，发布关联仍可通过公开路径从云端恢复',e)}
   const publicUrl=location.origin+'/view/'+encodeURIComponent(saved.slug);
-  notify((publish?'原版 HTML 已成功发布':'原版 HTML 已保存为草稿')+'：'+saved.title+(warnings.length?'\\n⚠ '+warnings.length+' 个附件未同步，请在 MSWQ 素材库补充':'')+(groupLocalUnsaved?'\\n⚠ 本机存储空间不足，请另行导出编辑备份，避免关闭页面后丢失本地修改':'')+'\\n访问地址：'+publicUrl);
+  notify((publish?'原版 HTML 已成功发布':'原版 HTML 已保存为草稿')+'：'+saved.title+(warnings.length?'\\n⚠ '+warnings.length+' 个附件未同步，请在 MSWQ 素材库补充':'')+(groupLocalUnsaved?'\\n⚠ 本机持久化失败，但本次原版 HTML 已保存在 MSWQ 云端；建议导出编辑备份':'')+'\\n访问地址：'+publicUrl);
   if(notify===report){
    const target=$('#mswqBridgeMsg');
    if(target){
