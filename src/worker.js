@@ -8,6 +8,15 @@ const MSWQ_TEST_OPEN_ADMIN = true;
 const encoder = new TextEncoder();
 const enc = value => encoder.encode(value);
 const CORS_SAME_ORIGIN_ONLY = true;
+const CORE_TYPE_LABELS={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具',bookmarks:'网址收藏',profile:'个人名片'};
+function allTypeIds(s){return [...Object.keys(CORE_TYPE_LABELS),...s.custom_types.map(x=>x.id)]}
+function typeLabel(s,id){return s.custom_types.find(x=>x.id===id)?.name||s.type_labels[id]||CORE_TYPE_LABELS[id]||''}
+function checkTypeName(s,id,raw){
+ const name=String(raw??'').trim();
+ if(!name||name.length>30||/[\u0000-\u001f\u007f<>]/.test(name))return '分类名称须为 1–30 个字符，不能有特殊控制字符';
+ if(allTypeIds(s).some(k=>k!==id&&typeLabel(s,k).toLocaleLowerCase()===name.toLocaleLowerCase()))return '分类名称重复';
+ return '';
+}
 function out(value,status=200,extra={}) {
   return new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...extra}});
 }
@@ -136,17 +145,27 @@ function record(r,includeContent=true){
 }
 async function config(env){
  const rows=await env.DB.prepare('SELECT key,value FROM settings').all();
- const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[],hidden_types:[]};
+ const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[],hidden_types:[],type_labels:{},deleted_types:[],type_order:[]};
  for(const {key,value} of rows.results||[]){
   if(key==='custom_types'){
    try{
     const parsed=JSON.parse(value);
     if(Array.isArray(parsed))out.custom_types=parsed.filter(x=>x&&/^custom_[a-f0-9]{32}$/.test(x.id)&&typeof x.name==='string').slice(0,100);
    }catch{}
-  }else if(key==='hidden_types'){
+  }else if(key==='hidden_types'||key==='deleted_types'||key==='type_order'){
    try{
     const parsed=JSON.parse(value);
-    if(Array.isArray(parsed))out.hidden_types=parsed.filter(x=>typeof x==='string'&&(/^(?:personal|group|document|page|link|bookmarks|profile)$/.test(x)||/^custom_[a-f0-9]{32}$/.test(x))).slice(0,150);
+    if(Array.isArray(parsed))out[key]=[...new Set(parsed.filter(x=>typeof x==='string'&&(/^(?:personal|group|document|page|link|bookmarks|profile)$/.test(x)||/^custom_[a-f0-9]{32}$/.test(x))))].slice(0,150);
+   }catch{}
+  }else if(key==='type_labels'){
+   try{
+    const parsed=JSON.parse(value);
+    if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed)){
+     for(const id of Object.keys(CORE_TYPE_LABELS)){
+      const name=String(parsed[id]||'').trim();
+      if(name&&name.length<=30&&!/[\u0000-\u001f\u007f<>]/.test(name))out.type_labels[id]=name;
+     }
+    }
    }catch{}
   }else out[key]=value;
  }
@@ -273,7 +292,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.3.0',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.4.0',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
