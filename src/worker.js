@@ -430,7 +430,12 @@ async function handler(req,env){
   const body=await parse(req);
   const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
   const item=normalizeItem(body);
-  const availability=await config(env);if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||availability.deleted_types.includes(item.kind))return fail('分类已删除，请恢复后再创建',409);
+  const availability=await config(env);
+  if(item.kind==='document'){
+   const displayCategory=item.category||'document';
+   if(!allTypeIds(availability).includes(displayCategory)||availability.deleted_types.includes(displayCategory))return fail('所选前台分类不存在或已删除，请重新选择',409);
+   if(availability.hidden_types.includes(displayCategory))return fail('所选前台分类已隐藏，请先显示或更换分类',409);
+  }else if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||availability.deleted_types.includes(item.kind))return fail('分类已删除，请恢复后再创建',409);
   try{return out({ok:true,item:await saveItem(env,item)},201)}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请更换 slug',409);throw e;}
  }
  const match=p.match(/^\/api\/admin\/items\/([a-f0-9-]{32,40})$/);
@@ -443,7 +448,12 @@ async function handler(req,env){
    if(body.version!==old.version)return fail('版本已更新，请刷新后重试，避免覆盖其他修改',409);
    const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
    const item=normalizeItem(body,id);
-   const availability=await config(env);if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||(availability.deleted_types.includes(item.kind)&&old.kind!==item.kind))return fail('分类已删除，请先恢复',409);
+   const availability=await config(env);
+    if(item.kind==='document'){
+     const displayCategory=item.category||'document';
+     if(!allTypeIds(availability).includes(displayCategory)||availability.deleted_types.includes(displayCategory))return fail('所选前台分类不存在或已删除，请重新选择',409);
+     if(availability.hidden_types.includes(displayCategory))return fail('所选前台分类已隐藏，请先显示或更换分类',409);
+    }else if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||(availability.deleted_types.includes(item.kind)&&old.kind!==item.kind))return fail('分类已删除，请先恢复',409);
    try{return out({ok:true,item:await saveItem(env,item,old)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
   }
   if(method==='DELETE'){
