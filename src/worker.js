@@ -160,6 +160,31 @@ function mswqReaderAddBackLink(html){
  else throw Error('原版 HTML 顶部导航结构不受支持');
  return output;
 }
+// Decorate only ONLINE personal-flow pages. Keep original R2 HTML and groups unchanged.
+const PERSONAL_SWITCH_STYLE = [
+ '#mswqPersonalSwitch{display:flex;align-items:center;gap:8px;max-width:100%;min-height:40px;overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding:4px 0 7px;scrollbar-width:thin;scrollbar-color:#6a6b70 #242527}',
+ '#mswqPersonalSwitch[hidden]{display:none!important}',
+ '#mswqPersonalSwitch::-webkit-scrollbar{height:6px}#mswqPersonalSwitch::-webkit-scrollbar-thumb{background:#77787b;border-radius:8px}',
+ '#mswqPersonalSwitch .mswq-personal-link{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;max-width:260px;min-height:36px;padding:9px 15px;border:1px solid #505155;border-radius:11px;background:#303133;color:#e0e0df;font:850 13px/1.4 Inter,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .12s,border-color .12s}',
+ '#mswqPersonalSwitch .mswq-personal-link:hover{background:#454649;border-color:#9a9b9d}',
+ '#mswqPersonalSwitch .mswq-personal-link[aria-current="page"]{background:#eeeeec;border-color:#eeeeec;color:#161719;cursor:default}',
+ '#mswqPersonalSwitch .mswq-personal-link:focus-visible{outline:2px solid #79d9ab;outline-offset:2px}',
+ '#flowTabs.mswq-personal-hide-local{display:none!important}',
+ '@media(max-width:650px){#mswqPersonalSwitch .mswq-personal-link{max-width:185px;font-size:12px;padding:9px 11px}}'
+].join('');
+function decoratePersonalFlowResponse(response){
+ return new HTMLRewriter()
+  .on('head',{element(element){
+   element.append('<style id="mswq-personal-switch-style">'+PERSONAL_SWITCH_STYLE+'</style>',{html:true});
+  }})
+  .on('#flowTabs',{element(element){
+   element.before('<nav id="mswqPersonalSwitch" aria-label="全部个人流程快速切换" hidden></nav>',{html:true});
+  }})
+  .on('body',{element(element){
+   element.append('<script src="/assets/personal-switch.js" defer></script>',{html:true});
+  }})
+  .transform(response);
+}
 function frontTabForItem(item){return ['document','html'].includes(item.kind)?(item.category||(item.kind==='html'?'page':'document')):item.kind;}
 function htmlAssetLink(id){return /^[a-f0-9-]{36}$/i.test(String(id||''))?HTML_VIEW_ORIGIN+'/html/'+id+'/':'';}
 async function verifyHtmlItem(env,item){
@@ -320,11 +345,15 @@ async function handler(req,env){
    if(exact){
     const signature=base64url(await digest(item.title+'\0'+item.content));
     if(exact.customMetadata?.signature===signature&&exact.customMetadata?.kind===item.kind){
-     return new Response(exact.body,{status:200,headers:{
+     const headers={
       'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',
       'referrer-policy':'strict-origin-when-cross-origin',
-      'content-security-policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-     }});
+      'content-security-policy':item.kind==='personal'
+       ?"default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+       :"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+     };
+     const originalResponse=new Response(exact.body,{status:200,headers});
+     return item.kind==='personal'?decoratePersonalFlowResponse(originalResponse):originalResponse;
     }
    }
   }
@@ -332,6 +361,7 @@ async function handler(req,env){
  if(method==='GET'&&(p==='/'||p==='/admin'||p==='/admin/'||p.startsWith('/view/')))return html(ASSETS.html);
  if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+ if(method==='GET'&&p==='/assets/personal-switch.js')return new Response(ASSETS.personalSwitch,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&p==='/assets/legacy-bridge.js')return new Response(ASSETS.bridge,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
  if(method==='GET'&&(p==='/docx'||p==='/docx/')){
   if(url.searchParams.get('embed')!=='1'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return html(ASSETS.html);
@@ -349,7 +379,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.0',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.1',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
