@@ -1,6 +1,8 @@
 // MSWQ content API — Cloudflare Worker with isolated D1/R2 storage.
 // Placeholders are replaced by the deployment build step; do not store secrets in this repository.
 const ASSETS = __MSWQ_ASSETS__;
+// MSWQ test adapter operating on shared DOCX D1/KV without modifying original service.
+const DOCX_ADMIN_BACKEND = __MSWQ_DOCX_API__;
 // Temporary development mode. Set to false when MSWQ needs authentication.
 const MSWQ_TEST_OPEN_ADMIN = true;
 const encoder = new TextEncoder();
@@ -212,7 +214,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.6',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.7',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -243,22 +245,27 @@ async function handler(req,env){
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(req))return fail('请求来源不合法',403);
  }
  if(method==='GET'&&p==='/admin/legacy-editor')return adminEmbeddedHtml(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'));
- if(method==='GET'&&p==='/admin/docx-editor')return adminEmbeddedHtml(ASSETS.docx.replace(/<style id="mswq-docx-public-only">[\s\S]*?<\/style>/,'').replaceAll('/api/docx/','/api/admin/docx/').replace(/\/api\/(login|logout|password|order)(?=[^a-zA-Z]|$)/g,'/api/admin/docx/$1'));
+ if(method==='GET'&&p==='/admin/docx-editor'){
+  // Always show edit/upload tools on MSWQ, but preserve the public visitor edition.
+  const docx=ASSETS.docx
+   .replace(/<style id="mswq-docx-public-only">[\s\S]*?<\/style>/,'')
+   .replaceAll('/api/docx/','/api/admin/docx/')
+   .replace(/\/api\/(login|logout|password|order)(?=[^a-zA-Z]|$)/g,'/api/admin/docx/$1')
+   .replace('state.isAdmin=false;','state.isAdmin=true;')
+   .replace("state.adminToken=sessionStorage.getItem('ms_khmb_admin_token')||'';","state.adminToken='';")
+   .replace('</head>','<style>#adminToggle,#adminPassword,#adminLogout{display:none!important}</style></head>');
+  return adminEmbeddedHtml(docx);
+ }
  if(p.startsWith('/api/admin/docx/')){
-  const remotePath=p.replace('/api/admin/docx/','/api/');
-  if(!/^\/api\/(?:templates(?:\/[a-f0-9-]{16,60})?|templates\/[a-f0-9-]{16,60}\/(?:docx|version)|login|logout|session|password|order)$/.test(remotePath))
-   return fail('DOCX 管理接口不存在',404);
+  const apiPath=p.replace('/api/admin/docx/','/api/');
+  if(method==='GET'&&apiPath==='/api/session')return out({admin:true});
+  if(['/api/login','/api/logout','/api/password'].includes(apiPath))return fail('MSWQ 测试后台无须此操作',404);
+  const validTemplate=/^\/api\/templates(?:\/[a-f0-9-]{16,60}(?:\/(?:docx|version|rollback))?)?$/i.test(apiPath);
+  if(!validTemplate&&apiPath!=='/api/order')return fail('DOCX 管理接口不存在',404);
   if(!['GET','POST','PUT','PATCH','DELETE'].includes(method))return fail('不支持的方法',405);
-  const target='https://ms-khmb.mosen6266-ms007.workers.dev'+remotePath+url.search;
-  const headers=new Headers(req.headers);
-  for(const key of ['cookie','host','content-length','cf-connecting-ip','cf-ipcountry','cf-ray'])headers.delete(key);
-  const body=['GET','HEAD'].includes(method)?undefined:await req.arrayBuffer();
-  const remote=await env.DOCX_SERVICE.fetch(new Request(target,{method,headers,body}));
-  const passthrough=new Headers({'cache-control':'no-store','x-content-type-options':'nosniff'});
-  for(const key of ['content-type','content-disposition','x-template-version','etag','location']){
-   const value=remote.headers.get(key);if(value)passthrough.set(key,value);
-  }
-  return new Response(remote.body,{status:remote.status,headers:passthrough});
+  if(!env.DOCX_DB||!env.DOCX_KV)return fail('DOCX 原模板存储未连接',503);
+  const target=new URL(apiPath+url.search,url.origin);
+  return DOCX_ADMIN_BACKEND.fetch(new Request(target,req),{DB:env.DOCX_DB,KHMB:env.DOCX_KV},{});
  }
 
  if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,testMode:MSWQ_TEST_OPEN_ADMIN});
