@@ -943,7 +943,7 @@ renderSidebar=function(){
  khmbUpdateUI();
 };
 function khmbTemplateUrl(templateId){
- const link=new URL('/',window.location.origin);
+ const link=new URL('/docx',window.location.origin);
  link.searchParams.set('template',templateId);
  return link.toString();
 }
