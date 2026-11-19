@@ -17,6 +17,10 @@ MSWQ 使用 **Cloudflare Workers + 独立 D1 + 独立 R2**。后台编辑流程�
 - DOCX 访客工作台（无管理员按钮）：\`/docx\`
 - 已发布的 DOCX 模板卡片：\`/view/docx-workspace\`
 
+## DOCX 模板专属分享链接（2026-11-18 更新）
+
+在 MSWQ 的「DOCX 模板后台」点击某个模板的「复制专属链接」，现在生成 `https://mswq.mosen6266-ms007.workers.dev/view/docx-workspace?template=<模板ID>`。复制出的直达链接保留 MSWQ 前台导航和左上「← 返回」按钮，并以对应的 `template` 参数在右侧全屏 DOCX 工作区中选择正确模板，不再指向裸 `/docx?template=...` 页面。过去生成的 `/?template=<模板ID>` 与 `/docx?template=<模板ID>` 链接也兼容前台框架；独立内嵌工作台使用 `/docx?template=<模板ID>&embed=1` 防止循环嵌套。普通 `/docx` 入口及原 MS_KHMB 服务仍不变。
+
 ## 前台 DOCX 页面（当前上线）
 
 前台内容卡片「制作文件」在**当前标签页**打开 `/view/docx-workspace`；网页顶部保留与首页一致的 MSWQ 导航栏，并在左上角显示「← 返回」。顶部导航栏下方由 DOCX 填写工作台占满剩余整个浏览器视口；不会再用受限的普通内容详情页，也不会新建标签页或跳转到 `/docx`。通过 `/docx?template=<ID>` 生成的各模板专属分享链接依然可单独打开纯 DOCX 工作台，公开访客仍不可修改模板。后台 `/admin` 左侧的 DOCX 管理入口不受影响。
