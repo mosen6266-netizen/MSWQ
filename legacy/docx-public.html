@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="light" />
+<meta name="color-scheme" content="dark" />
 <title>MSWQ · DOCX 模板工作台</title>
 <style>
 :root { --nav:#142137;--nav2:#1c2d47;--navtext:#e9f0f8;--blue:#275def;--bluehover:#174bd7;--ink:#1b2841;--muted:#718097;--line:#e4e9f1;--bg:#f5f7fb;--white:#ffffff;--success:#0a9672;--danger:#d34b58;--shadow:0 12px 30px rgba(22,37,68,.065);}
@@ -151,6 +151,188 @@ body:not(.is-admin) .template-link-action{display:none!important}
 body:not(.is-admin) .field-help-edit{display:none!important}
 .field-help-dialog{display:block;min-height:100px;width:100%;box-sizing:border-box;resize:vertical;margin:12px 0 4px;padding:12px;font-family:inherit;font-size:12px;line-height:1.7;border:1px solid #cbd8ec;border-radius:9px;color:#223b5d;background:#fff}
 .field-help-caption{display:block;color:#7b8ba3;font-size:11px;line-height:1.6;margin-top:4px}
+
+/* MSWQ unified DOCX UI theme — public workspace and admin template studio.
+   This affects only the application chrome; the Word sheet/rendered runs
+   deliberately retain their original formatting and white paper. */
+:root{
+ color-scheme:dark;
+ --nav:#17191b;--nav2:#242527;--navtext:#f1f1f0;
+ --blue:#2c8059;--bluehover:#369a6c;
+ --ink:#f1f1f0;--muted:#a2a5a7;--line:#383a3d;
+ --bg:#121315;--white:#242527;--success:#56bf8c;--danger:#e77e80;
+ --shadow:0 12px 36px rgba(0,0,0,.19);
+ --mswq-field:#1b1d1f;--mswq-panel:#242527;--mswq-raised:#2b2d2f;
+ --mswq-muted:#a2a5a7;--mswq-green:#56bf8c;
+}
+html,body{background:var(--bg);color:var(--ink)}
+body input,body select,body textarea{accent-color:var(--mswq-green)}
+body input:focus,body select:focus,body textarea:focus{
+ border-color:#438f69!important;box-shadow:0 0 0 3px rgba(86,191,140,.12)!important;outline:none
+}
+.sidebar{background:#1b1c1e;color:var(--navtext);border-right:1px solid var(--line)}
+.brand-logo{background:linear-gradient(140deg,#29543e,#173428);color:#bcf5d4;
+ border:1px solid #4c936d;box-shadow:inset 0 0 16px #204e3588}
+.brand h1{color:#f0f2ef}.brand p{color:#9daaa2}
+.side-upload{background:#276747;border:1px solid #3d8c63;color:#effff5;box-shadow:none}
+.side-upload:hover{background:#328158}
+.sidebar-heading{color:#a9b0ac}.count{background:#303235;color:#d7ddd9}
+.side-search{background:#242628;border-color:#414546;color:#a2aaa5}
+.side-search input{color:#eef1ed}.side-search input::placeholder{color:#888f8a}
+.side-list{scrollbar-color:#565c58 transparent}
+.template-item{border-color:transparent}
+.template-item:hover{background:#2b2e30}
+.template-item.active{background:#183c2b;border-color:#478761;box-shadow:inset 3px 0 #56bf8c}
+.template-item.dropbefore{box-shadow:inset 0 3px #56bf8c}
+.template-item.dropafter{box-shadow:inset 0 -3px #56bf8c}
+.tiny-file{background:#303b34;color:#a8dfc0}
+.template-item.active .tiny-file{background:#2f7650;color:#effff5}
+.template-name{color:#e8ebe8}.template-secondary{color:#a2ada4}
+.item-actions{color:#bdc4bf}.item-actions:hover{background:#414745;color:#fff}
+.empty-side{color:#aeb6b0}
+.sidebar-bottom,.khmb-admin{border-color:#393c3e}
+.side-util{color:#c9d0cb}.side-util:hover{background:#303633;color:#fff}
+.privacy,.khmb-admin-status{color:#999f9c}
+.khmb-admin button{background:#2b2e30;border-color:#494f4b;color:#e3e9e5}
+.khmb-admin button:hover{background:#35443b;border-color:#4b926c}
+.khmb-admin .khmb-small{background:#242527}
+.template-link-action{color:#81d6aa}.template-link-action:hover{background:#284b38;border-color:#4e9a70}
+.main,.main-inner{background:#121315;color:#f1f1f0}
+.crumb{color:#a0a4a3}.crumb strong{color:#e4e9e5}
+.local-flag{color:#a8b5ac}.online-dot{background:#56bf8c;box-shadow:0 0 0 4px rgba(86,191,140,.12)}
+.document-title,.hero-empty h2,.panel-title,.setting-label,.stat-value,
+.right-head h3,.field-original{color:#f1f1f0}
+.eyebrow,.document-subtitle,.hero-empty p,.setting-helper,.stat-label,
+.panel-desc,.right-head p,.right-foot-meta,.stat-tiny,.stat-value small{color:#a1a9a4}
+.stat-card,.setting-card,.editor-panel{background:#242527;border-color:#3b3e40;box-shadow:none}
+.setting-icon{background:#254532;color:#91e0b3}
+.stat-tiny{background:#262829;border-color:#414547;color:#b7c1ba}
+.stat-tiny b{color:#f0f3ef}.stat-tiny.pending b{color:#ebbd76}
+.progress-track{background:#383f3a}.progress-fill{background:#56bf8c}
+.btn,.live-edit-btn,.icon-btn,.zoom-tools button,.step-btn{
+ background:#2b2d2f;color:#e6eae6;border-color:#4a4d4f;box-shadow:none
+}
+.btn:hover,.live-edit-btn:hover:not(:disabled),.icon-btn:hover,
+.zoom-tools button:hover,.step-btn:hover{background:#363d38;color:#f7fff9;border-color:#60a27a}
+.btn.primary,.khmb-masterbar .master-actions button.primary,
+.khmb-global-fields .khmb-global-go{background:#296d49;color:#effff4;border-color:#40875f}
+.btn.primary:hover,.khmb-masterbar .master-actions button.primary:hover,
+.khmb-global-fields .khmb-global-go:hover{background:#34895c;border-color:#59a878}
+.btn.ghost{background:transparent;color:#d5dfd8}
+.btn.danger,.btn.danger-soft,.khmb-masterbar .master-actions button.danger{
+ background:#3b282b;border-color:#805055;color:#ffc8ce
+}
+.btn:focus-visible{outline:2px solid #7bd5a1;outline-offset:2px}
+.filename-entry input,.filename-mini input,.field-search,.field-input,
+.field-entry input,.right-search,.modal-input,.khmb-manage-input,
+.field-help-dialog,.khmb-global-fields input[type=text]{
+ background:#1b1d1f;color:#eef0ec;border:1px solid #45494a
+}
+.filename-entry input::placeholder,.field-entry input::placeholder,
+.field-input::placeholder,.right-search input::placeholder{color:#858d88}
+.filename-ext,.filename-mini .filename-entry span,.filename-mini label span{color:#a7afa9}
+.filename-mini,.panel-footer,.table-header{background:#202224;border-color:#3d4041;color:#b1b8b2}
+.filename-mini label,.panel-footer .footer-count{color:#d9e7dc}
+.field-row{border-bottom-color:#3e4042}
+.field-row:hover{background:#2b302c}
+.field-label,.row-index{color:#e8eeea}.field-snippet,.row-count{color:#a3aaa6}
+.field-input:not(:placeholder-shown),.field-entry input:focus{background:#232926}
+.pill-done{background:#1b4a33;color:#a0ebbb}
+.pill-pending{background:#353632;color:#c7c5b7}
+.no-fields{color:#adb6ae}
+.filters{background:#1d1f21}
+.filter{color:#aeb6ae}
+.filter.active{background:#284635;color:#c0f2d2;box-shadow:none}
+.field-search{color:#9ea8a0}
+.field-search input,.right-search input{background:transparent;color:#ecf0ed}
+.export-bar{background:rgba(31,33,35,.96);border-color:#3f4244;box-shadow:0 -8px 28px rgba(0,0,0,.19)}
+.export-note{color:#edf3ed}.export-note small{color:#a5aea7}
+.toast{background:#303435;color:#eef3ed}
+.toast.error{background:#633538}.toast.success{background:#255a3d}
+.modal-backdrop{background:rgba(0,0,0,.73)}
+.modal{background:#242628;color:#f1f2ef;border:1px solid #484b4d;box-shadow:0 24px 80px #0009}
+.modal .modal-tag{background:#284735;color:#aeeac9}
+.modal p,.modal-k{color:#bac2bb}
+.modal-warning{background:#3e3323;border-color:#725736;color:#f1c88e}
+.preview-pane{background:#17191b;border-color:#3b3e40}
+.preview-bar{background:#242527;border-color:#3e4241}
+.preview-title{color:#e9eee9}
+.render-badge{background:#343b36;color:#b6d4bf}
+.zoom-tools{color:#b1bcb2}
+.preview-selection{background:#1d3228;border-color:#315c45;color:#c1e6d1}
+.preview-scroller{background:#191a1c;scrollbar-color:#535b56 #232527}
+.preview-body{color:#b2b7b4}
+.preview-bottom{background:#242527;color:#a8b0aa;border-color:#3d4041}
+.preview-error{color:#efb3ba}
+.fields-pane{background:#242527;border-color:#3e4240;box-shadow:none}
+.right-fixed{background:#242527;border-color:#3e4240}
+.right-head p{color:#a9b1aa}
+.right-search{background:#1b1d1f;color:#aab2ac;border-color:#45494a}
+.icon-btn{background:#303234;color:#dce5de}
+.right-list{background:#1a1c1e;scrollbar-color:#555b57 #202224}
+.field-card{background:#27292a;border-color:#424648;box-shadow:0 2px 7px #0002}
+.field-card:hover{background:#2c302e;border-color:#5c876c;box-shadow:0 4px 14px #0003}
+.field-card.is-active{background:#21382b;border-color:#56bf8c;box-shadow:0 0 0 2px rgba(86,191,140,.14)}
+.field-card.is-active .field-index{background:#275037;color:#d4f7e2}
+.field-index{color:#cbd4cc;background:#36393a;border-color:#494e4a}
+.field-status{background:#413628;border-color:#755937;color:#f1cd91}
+.field-status.done{background:#244532;border-color:#357b53;color:#b9efcf}
+.field-original{color:#f1f3ef}.style-info,.field-context{color:#abb5ad}
+.field-context{border-color:#414545}
+.field-entry input{background:#1b1d1f;color:#edf2ed;border-color:#474c48}
+.field-entry input:focus{background:#242c27}
+.field-bottom,.occ-stepper{color:#aab4ab}
+.step-btn{background:#303334;color:#dde7de;border-color:#535958}
+.right-footer{background:#242527;border-color:#404443;box-shadow:0 -4px 14px #0002}
+.right-foot-meta{color:#b0b7b1}
+.live-edit-tag{background:#214634;color:#baf3ce;border-color:#377c55}
+.live-edit-btn{background:#2d3130;color:#d6e6da}
+.direct-help{background:#223a2d;color:#c6e4d1;border-color:#3c7455}
+.direct-help b,.direct-count{color:#91dfb4}
+.khmb-masterbar,.preview-pane #khmbMasterTools{
+ background:#262a28;border-color:#434845;color:#e7ece7
+}
+.khmb-masterbar.editing,.preview-pane #khmbMasterTools.editing{
+ background:#203c2b;border-color:#56bf8c;box-shadow:inset 0 2px #56bf8c
+}
+.khmb-masterbar .master-explain{color:#b8c4b9}
+.khmb-masterbar .master-explain b{color:#f0f4ef}
+.khmb-masterbar .master-actions button{background:#313532;border-color:#505650;color:#ecf1ed}
+.khmb-masterbar .master-actions button:disabled{opacity:.46}
+.khmb-global-panel{background:#232628;border-color:#414647}
+.khmb-global-head strong{color:#e6efea}.khmb-global-head small{color:#a9b7ae}
+.khmb-global-fields label,.khmb-global-meta{color:#b6c3b9}
+.khmb-global-fields input[type=text]{color:#f2f4f0;background:#1b1d1f}
+.khmb-global-results{background:#202223;border-color:#424747}
+.khmb-global-result{background:#252728;border-color:#3f4441;color:#ecefeb}
+.khmb-global-result:hover{background:#2d4034}
+.khmb-global-result .khmb-hit-num,.khmb-global-result .khmb-hit-place,
+.khmb-global-result .khmb-hit-text{color:#c1cfc4}
+.khmb-hit-empty{color:#adb5af}
+#khmbGlobalPages button{background:#303334;border-color:#4a514b;color:#dfebe1}
+#khmbGlobalPages button:hover{background:#3b493e}
+#khmbGlobalPages button:disabled{opacity:.4}
+.khmb-global-meta input{accent-color:#56bf8c}
+.khmb-global-meta .khmb-highlight-count{color:#f08b92}
+.field-card .field-help{background:#303834;border-color:#435b4b;color:#b8dbc5}
+.field-card .field-help .field-help-icon{color:#8bd6ab}
+.field-card .field-help .field-help-edit{background:#284b37;border-color:#4c8c66;color:#d3f7e2}
+.field-card .field-help .field-help-edit:hover{background:#326244}
+.field-help-caption{color:#a6b5aa}
+.khmb-manage-label{color:#cddbcf}
+.khmb-manage-input{background:#1b1d1f;color:#edf1ed;border-color:#4b514c}
+.khmb-manage-note{color:#adb9b0}
+body:not(.is-admin) #outputName{background:#242729!important;color:#adb8af}
+body.khmb-maintenance .direct-help{background:#254331;border-color:#49865f}
+body.khmb-maintenance .field-input{background:#303333!important;color:#dadeda}
+body:not(.is-admin) .field-help-edit{display:none!important}
+/* Word preview is intentionally outside the app theme. */
+.docx-paper{background:#fff;color:#151515;border-color:#e4e6e8}
+.paper-content{color:#161616}
+.paper-content .docx-table{color:inherit}
+.paper-content .docx-p[contenteditable]:hover{background-color:rgba(77,126,230,.025)}
+.paper-content .docx-p[contenteditable]:focus{background-color:rgba(53,117,230,.045)}
+
 </style>
 <style id="mswq-docx-public-only">#adminToggle,#adminPassword,#adminLogout,#uploadSidebar,#uploadHero,#backupButton,#restoreButton,#changeTemplate,#deleteCurrent,.khmb-admin,.side-upload,.khmb-admin-only{display:none!important}.privacy{font-size:11px}.sidebar .brand p::after{content:" · MSWQ 公共查看模式";color:#9ad6bd}</style></head>
 <body>
