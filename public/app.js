@@ -874,8 +874,10 @@ function download(name,content,type){const u=URL.createObjectURL(new Blob([conte
 document.addEventListener('click',async e=>{
  const back=e.target.closest('a[data-mswq-back="true"]');
  if(back&&!e.defaultPrevented&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
-  if(history.length>1){e.preventDefault();history.back();return;}
-  try{const r=new URL(document.referrer);if(r.origin===location.origin&&r.href!==location.href){e.preventDefault();location.assign(r.href);return;}}catch{}
+  if(document.referrer){
+   if(history.length>1){e.preventDefault();history.back();return;}
+   try{const r=new URL(document.referrer);if(r.origin===location.origin&&r.href!==location.href){e.preventDefault();location.assign(r.href);return;}}catch{}
+  }
   // A directly opened link has no preceding MSWQ page; href="/" is the fallback.
  }
  const b=e.target.closest('[data-action]');if(!b)return;
