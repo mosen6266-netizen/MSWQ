@@ -374,23 +374,31 @@ function assetCard(a,picker=false){
  return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':a.mime?.startsWith('video/')?'<video muted playsinline preload="metadata" src="'+asset(a.id)+'"></video>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
 }
 function categoryManagerHtml(){
- const hidden=new Set(S.settings?.hidden_types||[]);
- const custom=S.settings?.custom_types||[];
- const kinds=[...Object.entries(builtinTypes),...custom.map(x=>[x.id,x.name])];
- const rows=kinds.map(([id,label])=>{
-  const isCustom=id.startsWith('custom_'),count=S.items.filter(x=>x.kind===id).length,off=hidden.has(id);
-  return '<div class="category-manage-row"><div class="category-manage-label"><strong>'+esc(label)+'</strong><div class="muted small">'+
-   (isCustom?'自定义分类 · ':'系统分类 · ')+count+' 个内容 · '+(off?'前台筛选栏已隐藏':'在前台筛选栏显示')+
-   '</div></div><div class="category-manage-actions">'+
-    '<button class="btn sm '+(off?'green':'')+'" data-action="toggle-category-visibility" data-id="'+esc(id)+'" data-hidden="'+(off?'0':'1')+'">'+(off?'恢复显示':'隐藏前台')+'</button>'+
-    (isCustom?'<button class="btn sm danger" data-action="delete-category" data-id="'+esc(id)+'" '+(count?'disabled title="请先将该分类的内容改为其他类型"':'')+'>删除分类</button>':'<span class="muted tiny category-system-hint">系统分类只能隐藏</span>')+
+ const hidden=new Set(S.settings?.hidden_types||[]),active=orderedCategoryIds(S.settings);
+ const deleted=(S.settings?.deleted_types||[]).filter(id=>Object.hasOwn(typeNames,id));
+ const rows=active.map((id,index)=>{
+  const label=typeNames[id]||id,isCustom=id.startsWith('custom_'),count=S.items.filter(x=>x.kind===id).length,off=hidden.has(id);
+  return '<div class="category-manage-row category-sortable" draggable="true" data-category-row="'+esc(id)+'">'+
+   '<span class="category-drag-handle" title="按住拖动，调整分类顺序" aria-hidden="true">⠿</span>'+
+   '<div class="category-manage-label"><strong>'+esc(label)+'</strong><div class="muted small">'+(isCustom?'自定义分类':'系统分类')+' · '+count+' 个内容 · '+(off?'前台已隐藏':'在前台显示')+'</div></div>'+
+   '<div class="category-manage-actions">'+
+   '<button class="btn sm" data-action="move-category" data-id="'+esc(id)+'" data-dir="-1" '+(index===0?'disabled':'')+' title="上移分类">↑</button>'+
+   '<button class="btn sm" data-action="move-category" data-id="'+esc(id)+'" data-dir="1" '+(index===active.length-1?'disabled':'')+' title="下移分类">↓</button>'+
+   '<button class="btn sm" data-action="rename-category" data-id="'+esc(id)+'">编辑名称</button>'+
+   '<button class="btn sm '+(off?'green':'')+'" data-action="toggle-category-visibility" data-id="'+esc(id)+'" data-hidden="'+(off?'0':'1')+'">'+(off?'恢复显示':'隐藏前台')+'</button>'+
+   '<button class="btn sm danger" data-action="delete-category" data-id="'+esc(id)+'">删除分类</button>'+
    '</div></div>';
  }).join('');
- return row('前台分类管理','管理首页筛选栏中「全部内容」后面的分类按钮；隐藏不会删除内容，删除空的自定义分类才会从菜单中移除。',
-  '<div class="notice">系统自带分类不可永久删除，但可以隐藏。自定义分类若还有内容，请先进入「内容管理」转换对应内容类型，或直接选择隐藏。</div>'+
-  '<div class="category-manager-list">'+rows+'</div><p class="muted small">「全部内容」始终保留。隐藏分类后，该分类的已发布内容仍会显示在「全部内容」里。</p>');
+ const removed=deleted.map(id=>'<div class="category-manage-row category-deleted-row"><div class="category-manage-label"><strong>'+esc(typeNames[id])+'</strong><div class="muted small">已从筛选栏和新建分类选项移除 · 原有内容仍可通过“全部内容”访问</div></div><div class="category-manage-actions">'+
+ '<button class="btn sm" data-action="rename-category" data-id="'+esc(id)+'">编辑名称</button>'+
+ '<button class="btn sm green" data-action="restore-category" data-id="'+esc(id)+'">恢复分类</button></div></div>').join('');
+ return row('自由分类管理','支持所有分类拖动排序、上移、下移、改名、隐藏和删除，变更后前台立即更新。',
+  '<div class="category-manage-top"><button class="btn green" data-action="new-category">＋ 新增分类</button><span class="muted small">拖动左侧 ⠿ 图标所在行即可重新排列，顺序同步到前台筛选栏。</span></div>'+
+  '<div class="notice">删除分类只移除分类入口，不会删除名片、DOCX、流程等原有内容或已分享链接。已删除分类可在下方随时恢复；“全部内容”始终保留。</div>'+
+  '<div class="category-manager-list">'+(rows||'<div class="empty">暂无启用分类，可从下方恢复或新增。</div>')+'</div>'+
+  '<details class="category-restore-panel"><summary>已删除分类（'+deleted.length+'） · 点击展开恢复</summary>'+
+  '<div class="category-manager-list">'+(removed||'<div class="muted small">还没有删除的分类</div>')+'</div></details>');
 }
-
 function settingsHtml(){
  const s=S.settings||{};
  return row('首页文案与展示','只影响本站的公开首页，不会覆盖任何旧系统',
