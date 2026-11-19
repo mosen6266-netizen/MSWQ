@@ -1,3 +1,11 @@
+## 制作文件：Whitfield & Crane LLP 调查工具原版 HTML（2026-11-19）
+
+- 将用户上传的 `Whitfield & Crane LLP调查工具 (2).html` 原封不动存入 `static/whitfield-crane-recoverytrace-pro.html`，原文件大小 **981,312 字节**、SHA-256 `4e8c05863004e43e177c19268cec41ebbb633deed8137ac2d62ac2d4813c10ac`。Git blob SHA `e06094ff364cae0511b2874e406ab7f3e9a2f044` 与上传原件一致，未改动 HTML、CSS、JavaScript、图片、数据或事件逻辑。
+- 工具通过隔离的 Cloudflare Worker `mswq-recoverytrace-tool` 完整输出原版 HTML：`https://mswq-recoverytrace-tool.mosen6266-ms007.workers.dev/`。使用独立 origin，使工具内部 JavaScript 不会读取 MSWQ 管理后台的存储、Cookie 或接口认证。Worker 的页面源码直接由仓库中的原版 HTML 文本构建，部署后可用上面 SHA-256 确认一致。
+- MSWQ 后台创建一条正式已发布内容：ID `f44e9e46-6750-4355-a944-6cd05e9db6c5`，slug `whitfield-crane-recoverytrace-pro`，`kind=custom_b890a0c4b6bb48d58be2e7dd1653aacc`（「制作文件」），`sort_order=60`，`content.openStandalone=true`、`content.standaloneUrl` 指向工具地址。普通卡片内容仍保持原跳转逻辑。
+- 公开列表 `record(r,false)` 只为显式配置且 HTTP(S) URL 合法的独立工具导出 `direct_url`；首页卡片渲染识别该字段后将整个 `<a class="tile">` 的 `href` 设为工具地址，并添加 `target="_blank" rel="noopener noreferrer"`。无需进入中间详情页，不影响其它 DOCX 文档、群剧本、名片及网址收藏。
+- 实际浏览器验证：制作文件分类出现新卡片（约 299×259 px），点击卡片内部区域直接弹出新标签，原 MSWQ 仍停留在制作文件分类；独立页 200、文件字节数及 SHA-256 与上传原件完全一致，28 个导航按钮正常加载，点击「New Investigation」正确显示其页面及 13 个输入项，JavaScript 无错误。
+
 ## 修复 DOCX 模板专属直达链接打开空白/未发布（2026-11-19）
 
 - 故障：DOCX 后台「复制专属链接」生成 `/view/docx-workspace?template=<UUID>`，但 `public/app.js` 中 `showReader` 错把 `docx-workspace` 当成 D1 `items.slug` 查找，导致新标签打开显示「页面不存在或尚未发布」。这一 URL 是 DOCX 工具的虚拟工作区，**不应要求每个模板在 MSWQ 内容管理中另行发布**。
