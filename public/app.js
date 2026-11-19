@@ -82,8 +82,21 @@ async function showReader(slugText,localItem=null){
  const nav=blocks.map((b,i)=>'<button class="navlink '+(b.type==='hint'?'hint':'')+'" data-action="jump" data-id="'+esc(b.id||'b'+i)+'">'+(i+1)+'. '+esc(b.title||b.text||blockNames[b.type]||'内容')+'</button>').join('');
  let body='';
  if(item.kind==='document'){
-  const baseDoc=content.docUrl||S.settings?.docx_url||'/docx';const docUrl=baseDoc+(content.templateId?(baseDoc.includes('?')?'&':'?')+'template='+encodeURIComponent(content.templateId):'');
-  body='<div class="readonly-notice">DOCX 访客工作台只允许浏览、填写和导出。原文档模板服务不在此页面提供管理员登录入口。</div>'+(urlOk(docUrl)?'<iframe class="doc-frame" title="文档在线工作台" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe>':'<div class="empty">尚未配置文档工具链接</div>');
+  const baseDoc=content.docUrl||S.settings?.docx_url||'/docx';
+  const docUrl=baseDoc+(content.templateId?(baseDoc.includes('?')?'&':'?')+'template='+encodeURIComponent(content.templateId):'');
+  if(!urlOk(docUrl)){
+   root.innerHTML='<div class="empty">文档工作台链接无效，请在后台配置正确的地址。<p><a class="btn" href="/">返回首页</a></p></div>';
+   return;
+  }
+  if(!localItem){
+   // A published document is a full-page app, not a small iframe inside the article reader.
+   // Keep the stable /view/{slug} public link, then open the configured DOCX workspace directly.
+   window.location.replace(new URL(docUrl,location.origin).href);
+   return;
+  }
+  // Unsaved admin previews retain a way back to the editor while using the entire viewport.
+  root.innerHTML='<div class="docx-preview-shell"><header class="docx-preview-top"><button class="btn sm" data-action="back-edit">← 返回内容编辑</button><strong>'+esc(item.title)+'</strong><span class="muted small">全屏文档工作台预览</span></header><iframe class="docx-preview-frame" title="文档在线工作台" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe></div>';
+  return;
  }else if(item.kind==='link'){
   body='<div class="block"><h2>'+esc(item.title)+'</h2><p>'+esc(item.description||'外部链接')+'</p>'+anchorButton('打开工具',content.url)+'</div>';
  }else{
