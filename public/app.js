@@ -6,6 +6,7 @@ const $=selector=>document.querySelector(selector);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlOk=x=>{try{return ['http:','https:'].includes(new URL(x,location.origin).protocol)}catch{return false}};
 const asset=id=>id?'/api/asset/'+encodeURIComponent(id):'';
+const absoluteHttpUrl=x=>{try{const v=new URL(x);return ['http:','https:'].includes(v.protocol)}catch{return false}};
 const builtinTypes={personal:'个人流程',group:'群剧本',document:'DOCX 文档',page:'自定义页面',link:'外部工具',bookmarks:'网址收藏',profile:'个人名片'};
 const typeNames={...builtinTypes};
 function applyCustomTypes(settings){
@@ -356,7 +357,8 @@ async function perform(action,id,el){
   adminRender();break;
  }
  case 'new-item':newItem();break;
- case 'edit-item':S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';adminRender();break;
+ case 'new-special':newItem(id);break;
+ case 'edit-item':S.returnTab=S.tab;S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';adminRender();break;
  case 'add-block':S.edit.content.blocks.push(blankBlock(id));adminRender();break;
  case 'remove-block':S.edit.content.blocks.splice(Number(id),1);adminRender();break;
  case 'move-block':{
@@ -364,6 +366,41 @@ async function perform(action,id,el){
   if(j>=0&&j<arr.length){[arr[i],arr[j]]=[arr[j],arr[i]];adminRender();}break;
  }
  case 'clear-asset':S.edit.content.blocks[Number(id)].assetId='';adminRender();break;
+ case 'add-bookmark':(S.edit.content.entries||(S.edit.content.entries=[])).push({id:crypto.randomUUID(),title:'',url:'',note:'',assetId:''});adminRender();break;
+ case 'remove-bookmark':S.edit.content.entries.splice(Number(id),1);adminRender();break;
+ case 'move-bookmark':{
+  const arr=S.edit.content.entries,i=Number(id),j=i+Number(el.dataset.dir);
+  if(j>=0&&j<arr.length)[arr[i],arr[j]]=[arr[j],arr[i]];
+  adminRender();break;
+ }
+ case 'add-profile':
+  (S.edit.content.fields||(S.edit.content.fields=[])).push({id:crypto.randomUUID(),type:['text','link','image'].includes(id)?id:'text',label:'',value:'',assetId:''});
+  adminRender();break;
+ case 'remove-profile':S.edit.content.fields.splice(Number(id),1);adminRender();break;
+ case 'move-profile':{
+  const arr=S.edit.content.fields,i=Number(id),j=i+Number(el.dataset.dir);
+  if(j>=0&&j<arr.length)[arr[i],arr[j]]=[arr[j],arr[i]];
+  adminRender();break;
+ }
+ case 'pick-special-image':{
+  const collection=el.dataset.collection;
+  if(!['entries','fields'].includes(collection))break;
+  S.picking={collection,index:Number(id)};await loadAssets();
+  const images=S.assets.filter(a=>a.mime?.startsWith('image/'));
+  openModal('<h2>选择图片</h2><p class="muted small">选择之前上传的图片，或返回编辑器直接上传新图片。</p>'+
+   (images.length?'<div class="asset-grid">'+images.map(a=>assetCard(a,true)).join('')+'</div>':'<div class="empty">素材库还没有图片，可以在编辑区直接上传。</div>')+
+   '<div class="flex" style="justify-content:flex-end;margin-top:16px"><button class="btn" data-action="close-modal">取消</button></div>');
+  break;
+ }
+ case 'clear-special-image':{
+  const collection=el.dataset.collection,index=Number(id);
+  if(['entries','fields'].includes(collection)&&S.edit.content[collection]?.[index])S.edit.content[collection][index].assetId='';
+  adminRender();break;
+ }
+ case 'copy-profile':{
+  const f=S.viewer?.content?.fields?.find(f=>f.id===id);
+  if(f){await navigator.clipboard.writeText(String(f.value||''));toast('内容已复制');}break;
+ }
  case 'create-custom-type':{
   const name=($('#customTypeName')?.value||'').trim();
   if(!name)return toast('请先输入分类名称');
@@ -391,7 +428,7 @@ async function perform(action,id,el){
   await showReader(S.edit.slug,S.edit);break;
  case 'delete-item':{
   if(!S.edit?.id||!confirm('确定永久删除「'+S.edit.title+'」？删除后公开链接将失效。'))return;
-  await api('/api/admin/items/'+S.edit.id,{method:'DELETE'});S.edit=null;S.tab='library';await refreshPanel();toast('已删除');break;
+  await api('/api/admin/items/'+S.edit.id,{method:'DELETE'});S.edit=null;S.tab=S.returnTab||'library';await refreshPanel();toast('已删除');break;
  }
  case 'revisions':{
   const data=await api('/api/admin/revisions?id='+encodeURIComponent(S.edit.id));
@@ -403,7 +440,12 @@ async function perform(action,id,el){
   S.edit=v.item;closeModal();await loadAdmin();adminRender();toast('已恢复历史版本');break;
  }
  case 'pick-asset':S.picking=Number(id);await loadAssets();openModal('<h2>选择文件</h2><p>从已上传的素材库选择</p><div class="asset-grid">'+S.assets.map(a=>assetCard(a,true)).join('')+'</div><div style="margin-top:15px"><button class="btn" data-action="close-modal">取消</button></div>');break;
- case 'select-asset':S.edit.content.blocks[S.picking].assetId=id;S.picking=null;closeModal();adminRender();break;
+ case 'select-asset':
+  if(S.picking&&typeof S.picking==='object'){
+   const item=S.edit?.content?.[S.picking.collection]?.[S.picking.index];
+   if(item)item.assetId=id;
+  }else S.edit.content.blocks[S.picking].assetId=id;
+  S.picking=null;closeModal();adminRender();break;
  case 'close-modal':closeModal();break;
  case 'copy-asset':await navigator.clipboard.writeText(location.origin+asset(id));toast('素材链接已复制');break;
  case 'delete-asset':
@@ -429,6 +471,17 @@ async function saveCurrent(publish){
  if(['link','document'].includes(item.kind)){
   const link=item.kind==='link'?item.content.url:item.content.docUrl;
   if(link&&!urlOk(link))return toast('链接地址必须以 https:// 或 http:// 开头');
+ }
+ if(item.kind==='bookmarks'){
+  const entries=item.content.entries||[];
+  if(publish&&!entries.length)return toast('请先添加至少一个收藏网址');
+  for(const e of entries){
+   if(e.url&&!absoluteHttpUrl(e.url))return toast('网址必须包含 https:// 或 http://');
+   if(publish&&(!e.title?.trim()||!e.url?.trim()))return toast('发布前请填写每条网址的名称和完整链接');
+  }
+ }
+ if(item.kind==='profile'){
+  for(const f of item.content.fields||[])if(f.type==='link'&&f.value&&!absoluteHttpUrl(f.value))return toast('名片中的链接必须包含 https:// 或 http://');
  }
  const isUpdate=!!item.id;
  const opts={method:isUpdate?'PUT':'POST',...jsonBody(item)};
@@ -469,6 +522,16 @@ document.addEventListener('input',e=>{
   const next=$('#homeSearch');next.focus();next.setSelectionRange(caret,caret);return;
  }
  if(t.id==='adminSearch'){S.search=t.value;const caret=t.selectionStart;adminRender();const n=$('#adminSearch');n.focus();n.setSelectionRange(caret,caret);return;}
+ if(t.dataset.bookmarkIndex!==undefined&&S.edit?.kind==='bookmarks'){
+  const entry=S.edit.content.entries?.[Number(t.dataset.bookmarkIndex)];
+  if(entry)entry[t.dataset.prop]=t.value;
+  return;
+ }
+ if(t.dataset.profileIndex!==undefined&&S.edit?.kind==='profile'){
+  const entry=S.edit.content.fields?.[Number(t.dataset.profileIndex)];
+  if(entry)entry[t.dataset.prop]=t.value;
+  return;
+ }
  if(t.dataset.field){
   const key=t.dataset.field;
   if(key==='kind')return;
@@ -487,8 +550,29 @@ document.addEventListener('input',e=>{
   if(block)block[t.dataset.bfield]=t.dataset.bfield==='seconds'?Number(t.value):t.value;
  }
 });
-document.addEventListener('change',e=>{
+document.addEventListener('change',async e=>{
  const t=e.target;
+ if(t.dataset.imageUpload){
+  const collection=t.dataset.imageUpload,index=Number(t.dataset.index),file=t.files?.[0];
+  if(!file||!S.edit||!['entries','fields'].includes(collection))return;
+  const allowed=['image/jpeg','image/png','image/gif','image/webp'];
+  const ext=file.name.split('.').pop()?.toLowerCase();
+  const mime=allowed.includes(file.type)?file.type:({jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp'}[ext]||'');
+  if(!allowed.includes(mime)){toast('仅支持 JPG、PNG、WEBP、GIF 图片');return;}
+  if(file.size>12000000){toast('图片不得超过 12MB');return;}
+  t.disabled=true;toast('正在上传图片…');
+  try{
+   const data=await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+   const entry=S.edit.content[collection]?.[index];
+   if(entry){entry.assetId=data.asset.id;adminRender();toast('图片已上传并选用');}
+  }catch(err){console.error(err);t.disabled=false;toast('图片上传失败：'+err.message)}
+  return;
+ }
+ if(t.dataset.profileIndex!==undefined&&t.dataset.prop==='type'&&S.edit?.kind==='profile'){
+  const entry=S.edit.content.fields?.[Number(t.dataset.profileIndex)];
+  if(entry){entry.type=t.value;adminRender();}
+  return;
+ }
  if(t.dataset.field==='kind'&&S.edit){
   if(t.value==='__create_type__'){
    t.value=S.edit.kind;
