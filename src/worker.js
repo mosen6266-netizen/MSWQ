@@ -82,7 +82,7 @@ function normalizeItem(incoming,id){
  }
  if(kind==='profile'){
   normalized.fields=(Array.isArray(content.fields)?content.fields:[]).slice(0,200).map(entry=>({
-   id:safeId(entry?.id),type:['text','link','image'].includes(entry?.type)?entry.type:'text',
+   id:safeId(entry?.id),type:['text','link','image','video'].includes(entry?.type)?entry.type:'text',
    label:cleanString(entry?.label,120),value:cleanString(entry?.value,3500),
    assetId:safeAsset(entry?.assetId)
   }));
@@ -123,7 +123,7 @@ function validateSpecialContent(incoming){
    if(!f||typeof f!=='object')return '名片项目格式错误';
    if(String(f.label||'').length>120||String(f.value||'').length>3500)return '名片项目标签或内容过长';
    if(f.type==='link'&&f.value&&!allowedUrl(String(f.value)))return '名片网址必须使用 http:// 或 https://';
-   if(f.type&&!['text','link','image'].includes(f.type))return '名片项目类型不支持';
+   if(f.type&&!['text','link','image','video'].includes(f.type))return '名片项目类型不支持';
   }
  }
  return '';
@@ -136,12 +136,17 @@ function record(r,includeContent=true){
 }
 async function config(env){
  const rows=await env.DB.prepare('SELECT key,value FROM settings').all();
- const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[]};
+ const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[],hidden_types:[]};
  for(const {key,value} of rows.results||[]){
   if(key==='custom_types'){
    try{
     const parsed=JSON.parse(value);
     if(Array.isArray(parsed))out.custom_types=parsed.filter(x=>x&&/^custom_[a-f0-9]{32}$/.test(x.id)&&typeof x.name==='string').slice(0,100);
+   }catch{}
+  }else if(key==='hidden_types'){
+   try{
+    const parsed=JSON.parse(value);
+    if(Array.isArray(parsed))out.hidden_types=parsed.filter(x=>typeof x==='string'&&(/^(?:personal|group|document|page|link|bookmarks|profile)$/.test(x)||/^custom_[a-f0-9]{32}$/.test(x))).slice(0,150);
    }catch{}
   }else out[key]=value;
  }
@@ -204,14 +209,37 @@ async function importBundle(env,body){
  return {ok:true,count:done.length,items:done,warnings};
 }
 function imageMime(type){return /^image\/(?:jpeg|png|gif|webp)$/i.test(type);}
-async function serveAsset(env,id){
+function videoMime(type){return /^video\/(?:mp4|webm)$/i.test(type);}
+async function serveAsset(env,id,request){
  const row=await env.DB.prepare('SELECT * FROM assets WHERE id=?').bind(id).first();
  if(!row)return fail('文件不存在',404);
- const obj=await env.FILES.get(row.key);
+ const url=new URL(request.url),download=url.searchParams.get('download')==='1';
+ const mime=(imageMime(row.mime)||videoMime(row.mime))?row.mime:'application/octet-stream';
+ const total=Number(row.size)||0;
+ const rangeHeader=videoMime(mime)&&!download?request.headers.get('range'):null;
+ let range=null;
+ if(rangeHeader){
+  const match=/^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if(!match||(!match[1]&&!match[2]))return new Response(null,{status:416,headers:{'content-range':'bytes */'+total}});
+  const start=match[1]?Number(match[1]):Math.max(0,total-Number(match[2]));
+  const end=match[2]&&match[1]?Number(match[2]):total-1;
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||start>=total)return new Response(null,{status:416,headers:{'content-range':'bytes */'+total}});
+  range={offset:start,length:Math.min(total-1,end)-start+1};
+ }
+ const obj=await env.FILES.get(row.key,range?{range}:undefined);
  if(!obj)return fail('文件不存在',404);
- const type=imageMime(row.mime)?row.mime:'application/octet-stream';
- const filename=encodeURIComponent(row.name);
- return new Response(obj.body,{headers:{'content-type':type,'content-length':String(row.size),'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'content-disposition':(imageMime(row.mime)?'inline':'attachment')+"; filename*=UTF-8''"+filename,'cache-control':'public,max-age=86400'}});
+ const headers=new Headers({
+  'content-type':mime,'x-content-type-options':'nosniff',
+  'content-security-policy':"default-src 'none'; sandbox",
+  'content-disposition':(download||(!imageMime(mime)&&!videoMime(mime))?'attachment':'inline')+"; filename*=UTF-8''"+encodeURIComponent(row.name),
+  'cache-control':download?'private,no-store':'public,max-age=86400',
+  'accept-ranges':videoMime(mime)?'bytes':'none'
+ });
+ if(range){
+  headers.set('content-range','bytes '+range.offset+'-'+(range.offset+range.length-1)+'/'+total);
+  headers.set('content-length',String(range.length));
+ }else headers.set('content-length',String(total));
+ return new Response(obj.body,{status:range?206:200,headers});
 }
 function publicDocxPage(value){
  const response=html(value,true),headers=new Headers(response.headers);
@@ -245,14 +273,14 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.2.1',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.3.0',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
   const row=await env.DB.prepare("SELECT * FROM items WHERE slug=? AND status='published'").bind(slug).first();
   return row?out({ok:true,item:record(row)}):fail('页面不存在或尚未发布',404);
  }
- if(method==='GET'&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop());
+ if(method==='GET'&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop(),req);
  if(method==='POST'&&p==='/api/admin/login'){
   if(MSWQ_TEST_OPEN_ADMIN)return out({ok:true,testMode:true});
   if(!checkOrigin(req))return fail('请求来源不合法',403);
@@ -322,6 +350,31 @@ async function handler(req,env){
   await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('custom_types',JSON.stringify(categories)).run();
   return out({ok:true,type,custom_types:categories},201);
  }
+ if(method==='PUT'&&p==='/api/admin/types/visibility'){
+  const body=await parse(req,10000);
+  const id=String(body?.id||''),hidden=body?.hidden;
+  if(typeof hidden!=='boolean')return fail('请明确选择显示或隐藏分类');
+  const settings=await config(env);
+  const allowed=['personal','group','document','page','link','bookmarks','profile',...settings.custom_types.map(t=>t.id)];
+  if(!allowed.includes(id))return fail('分类不存在',404);
+  const values=new Set(settings.hidden_types);
+  if(hidden)values.add(id);else values.delete(id);
+  await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('hidden_types',JSON.stringify([...values])).run();
+  return out({ok:true,hidden_types:[...values]});
+ }
+ if(method==='DELETE'&&/^\/api\/admin\/types\/custom_[a-f0-9]{32}$/.test(p)){
+  const id=p.slice('/api/admin/types/'.length);
+  const settings=await config(env);
+  if(!settings.custom_types.some(t=>t.id===id))return fail('分类不存在',404);
+  const used=await env.DB.prepare('SELECT COUNT(*) AS total FROM items WHERE kind=?').bind(id).first();
+  if((used?.total||0)>0)return fail('此分类仍有 '+used.total+' 个内容，请先转换这些内容的类型，或者在分类管理中隐藏该分类',409);
+  const next=settings.custom_types.filter(t=>t.id!==id),hidden=settings.hidden_types.filter(t=>t!==id);
+  await env.DB.batch([
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('custom_types',JSON.stringify(next)),
+   env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('hidden_types',JSON.stringify(hidden))
+  ]);
+  return out({ok:true,custom_types:next,hidden_types:hidden});
+ }
  if(method==='GET'&&p==='/api/admin/items'){
   const rows=await env.DB.prepare('SELECT * FROM items ORDER BY sort_order ASC,updated_at DESC').all();
   return out({ok:true,items:(rows.results||[]).map(r=>record(r))});
@@ -386,12 +439,13 @@ async function handler(req,env){
  if(method==='POST'&&p==='/api/admin/assets'){
   const name=cleanString(decodeURIComponent(req.headers.get('x-file-name')||'file'),200);
   const mime=cleanString(req.headers.get('content-type')||'application/octet-stream',100);
-  const allowed=['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.openxmlformats-officedocument.presentationml.presentation','text/plain','application/zip'];
-  if(!allowed.includes(mime))return fail('不支持的文件类型。请上传图片、PDF、DOCX、XLSX、PPTX、TXT 或 ZIP');
+  const allowed=['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.openxmlformats-officedocument.presentationml.presentation','text/plain','application/zip'];
+  if(!allowed.includes(mime))return fail('不支持的文件类型。支持图片、MP4/WebM 视频及常用文档');
+  const sizeLimit=videoMime(mime)?50000000:12000000;
   const stated=Number(req.headers.get('content-length')||0);
-  if(stated>12000000)return fail('单个文件不能超过 12MB',413);
+  if(stated>sizeLimit)return fail(videoMime(mime)?'视频不能超过 50MB':'单个文件不能超过 12MB',413);
   const bytes=await req.arrayBuffer();
-  if(bytes.byteLength>12000000)return fail('单个文件不能超过 12MB',413);
+  if(bytes.byteLength>sizeLimit)return fail(videoMime(mime)?'视频不能超过 50MB':'单个文件不能超过 12MB',413);
   if(!bytes.byteLength)return fail('空文件不能上传');
   const id=crypto.randomUUID();
   await env.FILES.put(id,bytes,{httpMetadata:{contentType:mime}});
