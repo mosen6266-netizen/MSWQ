@@ -1,6 +1,8 @@
 // MSWQ content API — Cloudflare Worker with isolated D1/R2 storage.
 // Placeholders are replaced by the deployment build step; do not store secrets in this repository.
 const ASSETS = __MSWQ_ASSETS__;
+// Temporary development mode. Set to false when MSWQ needs authentication.
+const MSWQ_TEST_OPEN_ADMIN = true;
 const encoder = new TextEncoder();
 const enc = value => encoder.encode(value);
 const CORS_SAME_ORIGIN_ONLY = true;
@@ -175,7 +177,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.0'});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.0.1',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -184,6 +186,7 @@ async function handler(req,env){
  }
  if(method==='GET'&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop());
  if(method==='POST'&&p==='/api/admin/login'){
+  if(MSWQ_TEST_OPEN_ADMIN)return out({ok:true,testMode:true});
   if(!checkOrigin(req))return fail('请求来源不合法',403);
   if(!env.ADMIN_PASSWORD)return fail('请先在 Cloudflare Worker 中设置 ADMIN_PASSWORD 密钥',503);
   const ip=req.headers.get('cf-connecting-ip')||'unknown';
@@ -201,7 +204,7 @@ async function handler(req,env){
   return out({ok:true},200, {'set-cookie':cookie(await newSession(env))});
  }
  if(p.startsWith('/api/admin/')||p==='/admin/legacy-editor'||p==='/admin/docx-editor'){
-  if(!await sessionValid(req,env))return fail('请先登录管理后台',401);
+  if(!MSWQ_TEST_OPEN_ADMIN && !await sessionValid(req,env))return fail('请先登录管理后台',401);
   if(!['GET','HEAD'].includes(method)&&!checkOrigin(req))return fail('请求来源不合法',403);
  }
  if(method==='GET'&&p==='/admin/legacy-editor')return html(ASSETS.legacy.replace('</body>','<script src="/assets/legacy-bridge.js" defer></script></body>'),true);
@@ -223,8 +226,8 @@ async function handler(req,env){
   return new Response(remote.body,{status:remote.status,headers:passthrough});
  }
 
- if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true});
- if(method==='POST'&&p==='/api/admin/logout')return out({ok:true},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
+ if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='POST'&&p==='/api/admin/logout')return out({ok:true,testMode:MSWQ_TEST_OPEN_ADMIN},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
  if(method==='GET'&&p==='/api/admin/items'){
   const rows=await env.DB.prepare('SELECT * FROM items ORDER BY sort_order ASC,updated_at DESC').all();
   return out({ok:true,items:(rows.results||[]).map(r=>record(r))});
