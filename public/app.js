@@ -343,7 +343,7 @@ function libraryHtml(){
     '<td class="library-sort-cell"><span class="library-grip" title="拖动调整排序">⠿</span><span class="library-index">'+(index+1)+'</span></td>'+
     '<td><strong>'+esc(x.title)+'</strong><div class="tiny muted truncate">/view/'+esc(x.slug)+'</div></td>'+
     '<td><span class="library-tab-label">'+esc(typeNames[id]||id)+'</span></td>'+
-    '<td class="small muted">'+esc(typeNames[x.kind]||x.kind)+'</td>'+
+    '<td class="small muted">'+esc(x.kind==='html'?'HTML 文件':(typeNames[x.kind]||x.kind))+'</td>'+
     '<td><span class="pill '+esc(x.status)+'">'+(x.status==='published'?'已发布':'草稿')+'</span></td>'+
     '<td class="library-row-actions"><div class="actions">'+
      '<button class="btn sm" data-action="move-content" data-id="'+esc(x.id)+'" data-dir="-1" title="上移" '+(!canSort||index===0?'disabled':'')+'>↑</button>'+
@@ -413,7 +413,7 @@ async function showQuickHtmlCreate(chosen=''){
   '<div class="field"><label>简介（可选）</label><textarea id="quickHtmlDescription" placeholder="在首页卡片下方显示"></textarea></div>'+
   (files.length?'':'<p class="muted">文件库暂无 HTML，请先到「文件素材」上传 HTML。</p>')+
   '<div class="flex end"><button class="btn" data-action="close-modal">取消</button>'+
-  (files.length?'<button class="btn green" data-action="publish-html-quick">保存并发布</button>':'<button class="btn primary" data-action="tab" data-id="assets">前往上传文件</button>')+'</div>');
+  (files.length?'<button class="btn green" data-action="publish-html-quick">保存并发布</button>':'<button class="btn primary" data-action="go-html-upload">前往上传文件</button>')+'</div>');
 }
 function htmlEditorHtml(item){
  const content=item.content||(item.content={});
@@ -690,6 +690,7 @@ case 'retry-bookmarks':{
   if(id==='assets')await loadAssets();
   adminRender();break;
  }
+ case 'go-html-upload':closeModal();S.tab='assets';await loadAssets();adminRender();break;
  case 'new-html-card':await showQuickHtmlCreate(id||'');break;
  case 'publish-html-quick':{
   const htmlAssetId=$('#quickHtmlAsset')?.value||'',title=($('#quickHtmlTitle')?.value||'').trim(),category=$('#quickHtmlCategory')?.value||'';
