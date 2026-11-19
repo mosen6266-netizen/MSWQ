@@ -190,7 +190,24 @@ function openMediaPreview(id,kind,label){
 async function showReader(slugText,localItem=null){
  root.innerHTML='<div class="loading center" style="padding:100px">正在打开内容…</div>';
  try{
- const item=localItem||(await api('/api/public/item/'+encodeURIComponent(slugText))).item;S.viewer=item;S.preview=!!localItem;
+ // DOCX template-specific share links are a virtual workspace, not D1 items.
+ // A /view/docx-workspace?template=<id> link must work without an additional
+ // "publish content" step in the MSWQ content dashboard.
+ let item=localItem;
+ if(!item&&slugText==='docx-workspace'){
+  const id=new URLSearchParams(location.search).get('template')||'';
+  if(id&&!/^[a-f0-9-]{16,60}$/i.test(id))throw Error('DOCX 模板链接中的编号无效');
+  const catalog=await api('/api/docx/templates');
+  const templates=Array.isArray(catalog.templates)?catalog.templates:[];
+  const selected=id?templates.find(t=>t.id===id):templates[0];
+  if(id&&!selected)throw Error('此 DOCX 模板已不存在或暂不可访问，请向管理员确认链接');
+  if(!selected)throw Error('当前 DOCX 模板库为空');
+  item={kind:'document',title:selected.name||selected.title||'DOCX 模板工作台',
+   status:'published',slug:'docx-workspace',
+   content:{docUrl:'/docx',templateId:selected.id},description:'DOCX 模板直达'};
+ }
+ if(!item)item=(await api('/api/public/item/'+encodeURIComponent(slugText))).item;
+ S.viewer=item;S.preview=!!localItem;
  if(!S.settings){const pub=await api('/api/public');S.settings=pub.settings;applyCustomTypes(S.settings);}
  document.title=item.title+' · MSWQ';
  const content=item.content||{},blocks=content.blocks||[];
