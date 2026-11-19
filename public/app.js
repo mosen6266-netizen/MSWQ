@@ -190,7 +190,8 @@ async function showReader(slugText,localItem=null){
  if(!S.settings){const pub=await api('/api/public');S.settings=pub.settings;applyCustomTypes(S.settings);}
  document.title=item.title+' · MSWQ';
  const content=item.content||{},blocks=content.blocks||[];
- const nav=blocks.map((b,i)=>'<button class="navlink '+(b.type==='hint'?'hint':'')+'" data-action="jump" data-id="'+esc(b.id||'b'+i)+'">'+(i+1)+'. '+esc(b.title||b.text||blockNames[b.type]||'内容')+'</button>').join('');
+ // Sidebar navigation mirrors only green hint bubbles; full script remains in the main reader.
+ const nav=blocks.map((b,i)=>({b,i})).filter(({b})=>b.type==='hint').map(({b,i},n)=>'<button class="navlink hint" data-action="jump" data-id="'+esc(b.id||'b'+i)+'" title="'+esc(b.title||b.text||'绿色提示')+'">'+(n+1)+'. '+esc(b.title||b.text||'绿色提示')+'</button>').join('');
  let body='';
  if(item.kind==='bookmarks'){root.innerHTML=bookmarksPublic(item,!!localItem);return;}
  if(item.kind==='profile'){root.innerHTML=profilePublic(item,!!localItem);return;}
@@ -224,7 +225,7 @@ async function showReader(slugText,localItem=null){
  }else{
   body=blocks.map((b,i)=>blockRender(b,i,item)).join('')||'<div class="empty">尚无公开内容</div>';
  }
- root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" class="btn sm">← 返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main><aside class="reader-aside"><h3>内容导航</h3>'+nav+'</aside></div></div>';
+ root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" class="btn sm">← 返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid'+(nav?'':' reader-no-sidebar')+'"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main>'+(nav?'<aside class="reader-aside"><h3>绿色提示导航</h3>'+nav+'</aside>':'')+'</div></div>';
  }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" href="/">返回首页</a></p></div>'}
 }
 async function openAdmin(){
