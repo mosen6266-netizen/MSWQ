@@ -257,7 +257,16 @@ async function showReader(slugText,localItem=null){
  }else{
   body=blocks.map((b,i)=>blockRender(b,i,item)).join('')||'<div class="empty">尚无公开内容</div>';
  }
- root.innerHTML='<div class="reader-shell"><header class="reader-top"><a href="/" data-mswq-back="true" class="btn sm">返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header><div class="reader-grid'+(nav?'':' reader-no-sidebar')+'"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main>'+(nav?'<aside class="reader-aside"><h3>绿色提示导航</h3>'+nav+'</aside>':'')+'</div></div>';
+ const showPersonalSwitch=item.kind==='personal'&&!S.preview;
+ root.innerHTML='<div class="reader-shell'+(showPersonalSwitch?' reader-shell-personal':'')+'"><header class="reader-top"><a href="/" data-mswq-back="true" class="btn sm">返回</a><h1>'+esc(item.title)+'</h1><span class="pill">'+esc(typeNames[item.kind]||'内容')+'</span>'+(S.preview?'<button class="btn sm" data-action="back-edit">返回编辑</button>':'')+'</header>'+
+  (showPersonalSwitch?'<nav id="mswqPersonalSwitch" aria-label="全部个人流程快速切换" hidden></nav>':'')+
+  '<div class="reader-grid'+(nav?'':' reader-no-sidebar')+'"><main class="reader-main"><div class="muted small">'+esc(item.category||'MSWQ')+'　'+esc(item.description||'')+'</div><h1 style="margin:8px 0 24px;font-size:27px">'+esc(item.title)+'</h1>'+body+'</main>'+(nav?'<aside class="reader-aside"><h3>绿色提示导航</h3>'+nav+'</aside>':'')+'</div></div>';
+ if(showPersonalSwitch){
+  const switcher=document.createElement('script');
+  switcher.src='/assets/personal-switch.js';
+  switcher.defer=true;
+  document.body.appendChild(switcher);
+ }
  }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" data-mswq-back="true" href="/">返回</a></p></div>'}
 }
 async function openAdmin(){
