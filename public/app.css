@@ -21,3 +21,10 @@
 @media(max-width:1140px){.grid.compact-view{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:830px){.grid.compact-view{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:550px){.grid.compact-view{grid-template-columns:1fr}.grid.list-view .tile{grid-template-columns:90px minmax(0,1fr)}.grid.list-view .tile-image{min-height:120px}.grid.list-view .tile-body{padding:12px}}
+
+/* DOCX admin preview occupies the full browser viewport; public DOCX opens as a standalone app. */
+.docx-preview-shell{display:flex;flex-direction:column;width:100%;height:100vh;height:100dvh;overflow:hidden;background:#111214}
+.docx-preview-top{height:48px;min-height:48px;display:flex;align-items:center;gap:15px;padding:5px 14px;border-bottom:1px solid #393b3d;background:#1b1c1e}
+.docx-preview-top strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:14px}
+.docx-preview-frame{border:0;display:block;width:100%;flex:1;min-height:0;background:white}
+@media(max-width:760px){.docx-preview-top{height:44px;min-height:44px;gap:7px;padding:4px 8px}.docx-preview-top span{display:none}}
