@@ -4,7 +4,7 @@
 
 **当前已部署** `MSWQ_TEST_OPEN_ADMIN = true`。直接访问 `/admin` 可以编辑、保存、上传和发布，不需要设置 `ADMIN_PASSWORD` 或登录。原版话术编辑器 `/admin/legacy-editor` 同样免登录。**任何知道后台 URL 的访问者都可修改内容，仅适用于测试环境**。
 
-想恢复 MSWQ 的登录限制，可把 `src/worker.js` 顶部常量改回 `false`、配置 Cloudflare Secret `ADMIN_PASSWORD`，然后重新部署。**原来的 `ms-khmb` 服务没有被修改**；进入 `/admin/docx-editor` 时，DOCX 自身的管理员登录仍然由旧服务负责。
+想恢复 MSWQ 的登录限制，可把 `src/worker.js` 顶部常量改回 `false`、配置 Cloudflare Secret `ADMIN_PASSWORD`，然后重新部署。**原来的 `ms-khmb` Worker 代码和登录机制没有被修改**；在 MSWQ 测试后台进入「DOCX 模板后台」时，默认以管理员模式工作，不再显示登录、改密码或退出管理员按钮。MSWQ 直接操作旧工具共用的 DOCX D1/KV 数据，所以在 MSWQ 中修改/删除模板也会影响旧工具可见的模板。
 
 MSWQ 使用 **Cloudflare Workers + 独立 D1 + 独立 R2**。后台编辑流程和文档，前台仅显示已发布内容。项目源代码在 \`main\` 分支。
 
@@ -43,9 +43,9 @@ MSWQ 后台 `/admin` 左侧菜单点击「原版流程编辑器」或「DOCX 模
 ### DOCX 模板工作台
 - 从原生产 \`ms-khmb\` 的 HTML 获取并保留文档模板编辑能力，不修改原有 Worker/KV/D1。
 - **公开 \`/docx\` 页面**使用文档查看和填写引擎，隐藏旧管理员登录/上传/删除控件；MSWQ 的代理只允许 GET 模板列表、指定模板版本和 DOCX 下载，服务端拒绝公开写入。
-- **受保护 \`/admin/docx-editor\`** 可继续使用原有 DOCX 管理工作台。由于原服务仍具有自己的管理员鉴权，进入后需原有的管理员密码；这比迁移原始数据更安全，不影响原线上工具。
+- **MSWQ 内嵌 \`/admin/docx-editor\`** 进入时默认管理员模式，无密码输入、登录按钮。其专属读写接口复用原 DOCX 业务处理逻辑和旧服务 D1/KV 存储（新增绑定 `DOCX_DB`、`DOCX_KV`），支持原有上传、修改、删除、排序和 Word 模板版本保护。原 `ms-khmb` 的代码和独立登录规则不变，**但两者使用同一份模板数据**。
 - DOCX 模板文件和原版元数据仍存储在老 \`MS_KHMB\`，由 Cloudflare Service Binding 连接。MSWQ 不复制或覆盖模板数据。
-- 此设计实现了统一后台入口和独立的无管理员控件的公开入口，但**尚未将 DOCX 的完整业务逻辑、模板数据和原有管理员认证完全迁移为 MSWQ 自有数据模型**。
+- 公开 `/docx` 仍只能读取/填写/导出，不能修改模板。**测试阶段 MSWQ 后台无访问密码，知道 MSWQ 后台链接的人可以修改共享的 DOCX 模板数据；正式上线前必须恢复管理鉴权**。
 
 ## 云端资源
 
@@ -53,6 +53,7 @@ MSWQ 后台 `/admin` 左侧菜单点击「原版流程编辑器」或「DOCX 模
 - D1: \`mswq_db\`，ID \`d5cec61e-dc5a-4550-9b6f-25cc419c5ba0\`
 - R2: \`mswq-files\`
 - Service Binding: \`DOCX_SERVICE -> ms-khmb\`
+- MSWQ DOCX 管理独立绑定：`DOCX_DB`（原模板 D1）、`DOCX_KV`（原模板文件 KV）；原服务自身绑定未修改。
 - 密钥: \`ADMIN_PASSWORD\`（需要手动配置，可选增加独立 \`SESSION_SECRET\`）
 
 **以后重新开启密码模式时才需要配置管理员密钥（目前测试模式不需要）：**
@@ -68,7 +69,8 @@ Value: <your own strong random password>
 
 ## 源代码
 
-- \`src/worker.js\`：Cloudflare Worker 服务、权限、数据库、上传和只读 DOCX 接口。
+- \`src/worker.js\`：Cloudflare Worker 服务、权限、数据库、上传和只读 DOCX 接口，以及 MSWQ 测试管理 DOCX 路由。
+- `src/docx-admin-backend.js`：来自原 MS_KHMB 的 DOCX 业务接口，仅在 MSWQ 后台复用，管理权限由 MSWQ 处理。
 - \`public/index.html\`, \`public/app.js\`, \`public/app.css\`：公开网站、流程阅读器、管理员界面、样式。
 - \`public/legacy-bridge.js\`：原编辑器到在线发布系统的同步桥接。
 - \`legacy/flow-editor.html\`：完整原版流程编辑器（在服务器端要求管理员身份）。
@@ -76,7 +78,7 @@ Value: <your own strong random password>
 - \`legacy/docx-admin.html\`：独立保存的旧文档管理版源码参考。
 - \`schema.sql\`：D1 schema 初始化。
 
-部署器把 HTML、CSS 和 JS 编译为 \`src/worker.js\` 中的 \`__MSWQ_ASSETS__\` 常量；该 Worker 已通过 Cloudflare API 发布。仅更改 GitHub 代码不会自动部署到线上；需要重新打包和上传 Worker。后台的内容修改直接写 D1/R2，**不需 GitHub 发布**。
+部署器把 HTML、CSS 和 JS 编译为 \`src/worker.js\` 中的 \`__MSWQ_ASSETS__\` 常量，并把 `src/docx-admin-backend.js` 嵌入 `__MSWQ_DOCX_API__`；该 Worker 已通过 Cloudflare API 发布。仅更改 GitHub 代码不会自动部署到线上；需要重新打包和上传 Worker。后台的内容修改直接写 D1/R2，**不需 GitHub 发布**。
 
 ## 安全说明与后续扩展
 
