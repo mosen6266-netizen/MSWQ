@@ -81,14 +81,25 @@ function blockRender(b,index,item){
  return '<article class="block '+(type==='hint'||type==='note'?'hint':type==='wait'?'wait':'')+'" id="step-'+id+'">'+hdr+body+'</article>';
 }
 
+function mediaTrigger(mediaType,fileId,label){
+ if(!fileId)return '<div class="muted">尚未上传'+(mediaType==='video'?'视频':'图片')+'</div>';
+ const id=esc(fileId),title=esc(label||'媒体文件'),video=mediaType==='video';
+ return '<button class="profile-media-trigger" type="button" data-action="media-preview" data-id="'+id+'" data-media="'+(video?'video':'image')+'" data-title="'+title+'" aria-label="点击放大预览'+title+'">'+
+  (video?'<video src="'+asset(fileId)+'" muted playsinline preload="metadata" tabindex="-1"></video><span class="profile-media-play">▶</span>':'<img src="'+asset(fileId)+'" loading="lazy" alt="'+title+'">')+
+  '<span class="profile-media-label">点击放大预览</span></button>'+
+  '<a class="profile-media-download" href="'+asset(fileId)+'?download=1" download>↓ 保存 / 下载'+(video?'视频':'图片')+'</a>';
+}
 function bookmarksPublic(item,preview){
  const entries=Array.isArray(item.content?.entries)?item.content.entries:[];
- const cards=entries.filter(x=>x&&urlOk(x.url)).map(x=>{
-  const url=new URL(x.url,location.origin),domain=url.hostname.replace(/^www\./,'');
-  return '<a class="bookmark-public-card" href="'+esc(url.href)+'" target="_blank" rel="noopener noreferrer">'+
-   '<div class="bookmark-public-image">'+(x.assetId?'<img loading="lazy" src="'+asset(x.assetId)+'" alt="'+esc(x.title)+'">':'<span>↗</span>')+'</div>'+
+ const cards=entries.filter(x=>x&&absoluteHttpUrl(x.url)).map(x=>{
+  const url=new URL(x.url),domain=url.hostname.replace(/^www\./,'');
+  return '<article class="bookmark-public-card">'+
+   '<div class="bookmark-public-image">'+(x.assetId?'<button type="button" class="bookmark-cover-preview" data-action="media-preview" data-id="'+esc(x.assetId)+'" data-media="image" data-title="'+esc(x.title)+'" aria-label="放大预览网站封面"><img loading="lazy" src="'+asset(x.assetId)+'" alt="'+esc(x.title)+'"></button>':'<span>↗</span>')+'</div>'+
    '<div class="bookmark-public-info"><div class="bookmark-domain">'+esc(domain)+'</div><h2>'+esc(x.title||domain)+'</h2>'+
-   (x.note?'<p>'+esc(x.note)+'</p>':'')+'<span class="bookmark-open">打开网址 ↗</span></div></a>';
+   (x.note?'<p>'+esc(x.note)+'</p>':'')+
+   '<div class="bookmark-card-actions"><a class="bookmark-open" href="'+esc(url.href)+'" target="_blank" rel="noopener noreferrer">打开网址 ↗</a>'+
+   '<button class="bookmark-copy" type="button" data-action="copy-bookmark" data-id="'+esc(x.id)+'">复制链接</button></div>'+
+   '</div></article>';
  }).join('');
  return publicHeader(true)+'<main class="collection-page"><div class="collection-heading"><span class="collection-kicker">SAVED LINKS</span><h1>'+esc(item.title)+'</h1>'+
   (item.description?'<p>'+esc(item.description)+'</p>':'')+(preview?'<button class="btn sm" data-action="back-edit">← 返回编辑</button>':'')+
@@ -98,21 +109,39 @@ function profilePublic(item,preview){
  const fields=Array.isArray(item.content?.fields)?item.content.fields:[];
  const rows=fields.filter(f=>f&&(f.label||f.value||f.assetId)).map(f=>{
   const label=esc(f.label||'未命名项目');
-  if(f.type==='image'){
+  if(f.type==='image'||f.type==='video'){
    return '<section class="profile-public-field profile-image-field"><div class="profile-field-label">'+label+'</div>'+
-    (f.assetId?'<img src="'+asset(f.assetId)+'" loading="lazy" alt="'+label+'">':'')+
-    (f.value?'<div class="profile-field-value">'+esc(f.value)+'</div>':'')+'</section>';
+    mediaTrigger(f.type,f.assetId,f.label)+
+    (f.value?'<div class="profile-field-value profile-media-description">'+esc(f.value)+'</div>':'')+'</section>';
   }
   if(f.type==='link'){
    return '<section class="profile-public-field"><div class="profile-field-label">'+label+'</div>'+
-    (urlOk(f.value)?'<a href="'+esc(new URL(f.value,location.origin).href)+'" target="_blank" rel="noopener noreferrer" class="profile-field-link">'+esc(f.value)+' ↗</a>':'<div class="profile-field-value">'+esc(f.value||'')+'</div>')+'</section>';
+    '<div class="profile-link-row">'+(absoluteHttpUrl(f.value)?'<a href="'+esc(new URL(f.value).href)+'" target="_blank" rel="noopener noreferrer" class="profile-field-link">'+esc(f.value)+' ↗</a>':'<div class="profile-field-value">'+esc(f.value||'')+'</div>')+
+    (f.value?'<button class="profile-copy profile-link-copy" type="button" data-action="copy-profile" data-id="'+esc(f.id)+'">复制链接</button>':'')+'</div></section>';
   }
   return '<section class="profile-public-field"><div class="profile-field-label">'+label+'</div><div class="profile-field-value">'+esc(f.value||'')+'</div>'+
-   (f.value?'<button class="profile-copy" type="button" data-action="copy-profile" data-id="'+esc(f.id)+'">复制</button>':'')+'</section>';
+   (f.value?'<button class="profile-copy" type="button" data-action="copy-profile" data-id="'+esc(f.id)+'">复制内容</button>':'')+'</section>';
  }).join('');
  return publicHeader(true)+'<main class="profile-public-page"><div class="profile-public-card"><div class="profile-hero"><span>PERSONAL CARD</span><h1>'+esc(item.title||'个人名片')+'</h1>'+
   (item.description?'<p>'+esc(item.description)+'</p>':'')+(preview?'<button class="btn sm" data-action="back-edit">← 返回编辑</button>':'')+'</div>'+
   '<div class="profile-public-fields">'+(rows||'<div class="empty">这张名片还没有添加展示内容</div>')+'</div></div></main>';
+}
+function openMediaPreview(id,kind,label){
+ if(!/^[a-f0-9-]{32,40}$/i.test(id))return toast('找不到可预览的媒体文件');
+ document.getElementById('mediaPreview')?.remove();
+ const video=kind==='video',url=asset(id),down=url+'?download=1';
+ const wrap=document.createElement('div');
+ wrap.id='mediaPreview';wrap.className='media-overlay';wrap.setAttribute('role','dialog');
+ wrap.setAttribute('aria-modal','true');wrap.setAttribute('aria-label','媒体放大预览');
+ wrap.innerHTML='<div class="media-preview-box"><header class="media-preview-head"><strong>'+esc(label||'媒体预览')+'</strong>'+
+  '<button class="btn sm" data-action="close-media-preview">关闭 ×</button></header>'+
+  '<div class="media-preview-content">'+(video?'<video controls playsinline preload="metadata" src="'+url+'">当前浏览器无法播放此视频，请尝试下载文件。</video>':
+   '<img src="'+url+'" alt="'+esc(label||'图片预览')+'">')+'</div>'+
+  '<footer class="media-preview-footer"><a class="btn green" href="'+down+'" download>↓ 保存 / 下载'+(video?'视频':'图片')+'</a>'+
+  '<button class="btn" data-action="close-media-preview">返回</button></footer></div>';
+ wrap.addEventListener('click',event=>{if(event.target===wrap)wrap.remove()});
+ document.body.appendChild(wrap);
+ wrap.querySelector('[data-action="close-media-preview"]')?.focus();
 }
 
 async function showReader(slugText,localItem=null){
@@ -151,7 +180,8 @@ async function showReader(slugText,localItem=null){
   root.innerHTML='<div class="docx-preview-shell"><header class="docx-preview-top"><button class="btn sm" data-action="back-edit">← 返回内容编辑</button><strong>'+esc(item.title)+'</strong><span class="muted small">全屏文档工作台预览</span></header><iframe class="docx-preview-frame" title="文档在线工作台" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe></div>';
   return;
  }else if(item.kind==='link'){
-  body='<div class="block"><h2>'+esc(item.title)+'</h2><p>'+esc(item.description||'外部链接')+'</p>'+anchorButton('打开工具',content.url)+'</div>';
+  body='<div class="block"><h2>'+esc(item.title)+'</h2><p>'+esc(item.description||'外部链接')+'</p>'+anchorButton('打开工具',content.url)+
+   (absoluteHttpUrl(content.url)?'<button class="btn sm" data-action="copy-link-url" data-url="'+esc(content.url)+'">复制链接</button>':'')+'</div>';
  }else{
   body=blocks.map((b,i)=>blockRender(b,i,item)).join('')||'<div class="empty">尚无公开内容</div>';
  }
