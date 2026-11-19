@@ -144,7 +144,7 @@ function mswqReaderAddBackLink(html){
  // Prefer the exact preceding browser-history entry. For direct/deep links, use the
  // same-origin referrer if available; the site homepage is only the final fallback.
  const backCode='if(document.referrer){if(history.length>1){history.back();return false;}try{var r=new URL(document.referrer);if(r.origin===location.origin&&r.href!==location.href){location.assign(r.href);return false;}}catch(e){}}return true;';
- const link='<a data-mswq-home="true" class="mswq-home-link" href="'+home+'" aria-label="返回" onclick="'+backCode+'">← 返回</a>';
+ const link='<a data-mswq-home="true" class="mswq-home-link" href="'+home+'" aria-label="返回" onclick="'+backCode+'">返回</a>';
  if(html.includes('data-mswq-home="true"')){
   const buttonPattern=/<a\s+data-mswq-home="true"[^>]*>[\s\S]*?<\/a>/i;
   if(!buttonPattern.test(html))throw Error('旧版返回按钮无法识别，拒绝覆盖');
