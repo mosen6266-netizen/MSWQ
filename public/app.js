@@ -27,7 +27,7 @@ function field(name,value,prop,placeholder='',kind='input'){
  const v=esc(value||'');
  return '<div class="field"><label>'+esc(name)+'</label>'+(kind==='textarea'?'<textarea data-field="'+prop+'" placeholder="'+esc(placeholder)+'">'+v+'</textarea>':'<input data-field="'+prop+'" value="'+v+'" placeholder="'+esc(placeholder)+'">')+'</div>';
 }
-function publicHeader(){return '<header class="topbar"><div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
+function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" aria-label="返回 MSWQ 首页">← 返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
 function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
 async function showHome(){
  document.title='MSWQ · 内容与工具中心';S.preview=false;
@@ -38,7 +38,7 @@ async function showHome(){
 function homeRender(){
  const c=S.settings||{},types=['all','personal','group','document','page','link'];
  const items=S.items.filter(x=>(S.filter==='all'||x.kind===S.filter)&&[x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ').toLowerCase().includes(S.search.toLowerCase()));
- const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"'+(x.kind==='document'?' target="_blank" rel="noopener noreferrer"':'')+'><div class="tile-image">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'</div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind])+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'新标签页打开 ↗':'查看内容 →')+'</span></div></div></a>').join('');
+ const cards=items.map(x=>'<a class="tile" href="'+itemHref(x)+'"><div class="tile-image">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'</div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(typeNames[x.kind])+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(x.category||fmt(x.updated_at))+'</span><span>'+(x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>').join('');
  root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="搜索流程、剧本、文档、关键词…" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':typeNames[t])+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+items.length+' 个内容</span></div>'+(items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>')+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
 function anchorButton(label,url){
@@ -83,18 +83,23 @@ async function showReader(slugText,localItem=null){
  let body='';
  if(item.kind==='document'){
   const baseDoc=content.docUrl||S.settings?.docx_url||'/docx';
-  const docUrl=baseDoc+(content.templateId?(baseDoc.includes('?')?'&':'?')+'template='+encodeURIComponent(content.templateId):'');
-  if(!urlOk(docUrl)){
-   root.innerHTML='<div class="empty">文档工作台链接无效，请在后台配置正确的地址。<p><a class="btn" href="/">返回首页</a></p></div>';
+  let docUrl;
+  try{
+   const target=new URL(baseDoc,location.origin);
+   if(!['https:','http:'].includes(target.protocol))throw Error('invalid protocol');
+   const selectedTemplate=new URL(location.href).searchParams.get('template')||content.templateId;
+   if(selectedTemplate)target.searchParams.set('template',selectedTemplate);
+   docUrl=target.href;
+  }catch{
+   root.innerHTML=publicHeader(true)+'<div class="empty">文档工作台链接无效，请在后台配置正确的地址。</div>';
    return;
   }
   if(!localItem){
-   // A published document is a full-page app, not a small iframe inside the article reader.
-   // Keep the stable /view/{slug} public link, then open the configured DOCX workspace directly.
-   window.location.replace(new URL(docUrl,location.origin).href);
+   // Keep exactly the public-site navbar; let the DOCX app use everything underneath it.
+   root.innerHTML=publicHeader(true)+'<main class="public-docx-workspace"><iframe class="public-docx-frame" title="'+esc(item.title)+'" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe></main>';
    return;
   }
-  // Unsaved admin previews retain a way back to the editor while using the entire viewport.
+  // Admin draft previews keep their own back-to-editor control.
   root.innerHTML='<div class="docx-preview-shell"><header class="docx-preview-top"><button class="btn sm" data-action="back-edit">← 返回内容编辑</button><strong>'+esc(item.title)+'</strong><span class="muted small">全屏文档工作台预览</span></header><iframe class="docx-preview-frame" title="文档在线工作台" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads allow-popups" referrerpolicy="strict-origin-when-cross-origin" src="'+esc(docUrl)+'"></iframe></div>';
   return;
  }else if(item.kind==='link'){
