@@ -44,3 +44,66 @@
 .public-docx-frame{display:block;width:100%;height:100%;border:0;margin:0;padding:0;background:#f5f7fb}
 body:has(.public-docx-workspace){height:100vh;height:100dvh;overflow:hidden}
 @media(max-width:760px){.topbar-with-back{padding-left:110px}.topbar-back{left:8px}.topbar-with-back .brand{font-size:16px}.topbar-with-back .right .pill{font-size:10px;padding:3px 7px}}
+
+
+/* MSWQ bookmarks and completely user-defined personal cards (v1.2). */
+.special-list{display:grid;gap:10px}
+.special-list-item{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 16px;background:#222325;border:1px solid #44464a;border-radius:12px}
+.special-list-item>div:first-child{min-width:0;overflow-wrap:anywhere}
+.special-edit-row{background:#242526;border:1px solid #45474a;border-radius:13px;padding:17px;margin:12px 0}
+.special-row-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:17px}
+.special-row-heading strong{font-size:14px}
+.special-row-controls{display:flex;align-items:center;gap:6px}
+.special-image-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0}
+.special-upload-label{display:inline-flex;align-items:center;justify-content:center;position:relative;overflow:hidden;cursor:pointer;white-space:nowrap}
+.special-upload-label input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.special-image-preview{width:85px;height:70px;border:1px solid #57585a;border-radius:9px;overflow:hidden;background:#141516}
+.special-image-preview img{width:100%;height:100%;object-fit:cover}
+.special-meta-details{border:1px solid #4b4d4f;background:#242526;border-radius:11px}
+.special-meta-details summary{cursor:pointer;padding:13px 16px;font-weight:700}
+.special-meta-details[open] summary{border-bottom:1px solid #424446}
+.special-meta-inside{padding:17px}
+.special-meta-inside .field:last-child{margin-bottom:0}
+.collection-page{max-width:1320px;margin:auto;padding:45px 24px 100px;min-height:calc(100dvh - 68px)}
+.collection-heading{margin-bottom:28px}
+.collection-kicker{display:block;color:#70c99a;font-size:11px;font-weight:800;letter-spacing:.17em}
+.collection-heading h1{font-size:clamp(29px,3.5vw,44px);margin:8px 0 12px;letter-spacing:-.035em}
+.collection-heading p{max-width:790px;color:#aeb0b2;line-height:1.85;white-space:pre-wrap}
+.bookmark-public-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.bookmark-public-card{display:flex;flex-direction:column;min-width:0;border:1px solid #414348;border-radius:16px;background:#1f2022;overflow:hidden;text-decoration:none;transition:transform .16s,border-color .16s,box-shadow .16s}
+.bookmark-public-card:hover{transform:translateY(-3px);border-color:#65a984;box-shadow:0 14px 35px #0006}
+.bookmark-public-image{height:136px;background:linear-gradient(120deg,#222626,#344a3e);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.bookmark-public-image img{width:100%;height:100%;object-fit:cover}
+.bookmark-public-image span{font-size:48px;font-weight:700;color:#8ccaa9}
+.bookmark-public-info{padding:20px;display:flex;flex-direction:column;flex:1}
+.bookmark-domain{font-size:11px;color:#86bc9c;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bookmark-public-info h2{font-size:18px;margin:6px 0 7px;overflow-wrap:anywhere}
+.bookmark-public-info p{font-size:13px;color:#b5b6b8;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 14px}
+.bookmark-open{margin-top:auto;padding-top:10px;color:#a8dcc0;font-size:12px;font-weight:700}
+.profile-public-page{max-width:950px;margin:auto;padding:40px 20px 90px;min-height:calc(100dvh - 68px)}
+.profile-public-card{border:1px solid #454648;border-radius:22px;background:#1f2022;overflow:hidden;box-shadow:0 20px 60px #0004}
+.profile-hero{padding:34px 35px 29px;background:radial-gradient(ellipse at 100% 0,#345642,#222724 58%,#212224 100%);border-bottom:1px solid #3f4942}
+.profile-hero>span{font-size:11px;color:#96d7b6;letter-spacing:.17em;font-weight:800}
+.profile-hero h1{font-size:clamp(25px,3.4vw,38px);margin:9px 0 12px}
+.profile-hero p{color:#c3c8c5;margin:0;white-space:pre-wrap;line-height:1.8}
+.profile-public-fields{padding:20px 30px 30px}
+.profile-public-field{position:relative;padding:19px 0;border-bottom:1px solid #3a3c3e;min-width:0}
+.profile-public-field:last-child{border-bottom:0}
+.profile-field-label{font-size:12px;color:#9cbca9;font-weight:750;margin-bottom:8px;overflow-wrap:anywhere}
+.profile-field-value{font-size:16px;color:#f1f1f0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
+.profile-field-link{color:#8dd5ad;display:block;overflow-wrap:anywhere;font-size:15px;text-decoration:underline;text-decoration-color:#427b5c;text-underline-offset:4px}
+.profile-field-link:hover{color:#b8f4cf}
+.profile-image-field img{display:block;max-width:100%;max-height:600px;object-fit:contain;margin-bottom:11px;border-radius:12px;border:1px solid #383b3b;background:#171819}
+.profile-copy{border:1px solid #444a48;background:#2d3330;border-radius:8px;color:#bddac8;padding:3px 8px;font-size:11px;position:absolute;right:0;top:15px}
+.profile-copy:hover{background:#3d5043}
+@media(max-width:980px){.bookmark-public-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){
+ .special-list-item{align-items:flex-start;flex-direction:column}
+ .special-row-heading{align-items:flex-start;flex-direction:column}
+ .bookmark-public-grid{grid-template-columns:1fr}
+ .collection-page{padding:24px 16px 70px}
+ .profile-public-page{padding:22px 12px 70px}
+ .profile-hero{padding:25px 20px}
+ .profile-public-fields{padding:12px 20px 22px}
+ .special-edit-row{padding:13px}
+}
