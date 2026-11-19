@@ -93,13 +93,16 @@ async function showReader(slugText,localItem=null){
  }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" href="/">返回首页</a></p></div>'}
 }
 async function openAdmin(){
- root.innerHTML='<div class="loading center" style="padding:80px">正在验证后台权限…</div>';
+ root.innerHTML='<div class="loading center" style="padding:80px">正在加载测试后台…</div>';
  try{
-  await api('/api/admin/me');S.admin=true;await loadAdmin();adminRender();
- }catch{S.admin=false;loginRender();}
-}
-function loginRender(error=''){
- root.innerHTML='<div class="login-screen"><div class="login-box"><div class="brand" style="margin-bottom:20px">MS<em>WQ</em> · ADMIN</div><h1>管理后台</h1><p>仅授权管理员可创建、编辑与发布内容。公开前台没有编辑权限。</p><form id="loginForm"><div class="field"><label>管理员密码</label><input type="password" id="adminPass" autocomplete="current-password" required placeholder="请输入后台密码"></div><button class="btn primary" type="submit">安全登录</button></form>'+(error?'<div class="login-error">'+esc(error)+'</div>':'')+'<p style="margin-top:20px" class="center"><a href="/">返回公开首页</a></p></div></div>';
+  await api('/api/admin/me');
+  S.admin=true;
+  await loadAdmin();
+  adminRender();
+ }catch(err){
+  S.admin=false;
+  root.innerHTML='<div class="login-screen"><div class="login-box"><h1>后台暂时无法打开</h1><p>'+esc(err.message)+'</p><button class="btn primary" onclick="location.reload()">重新加载</button><p style="margin-top:20px"><a href="/">返回首页</a></p></div></div>';
+ }
 }
 async function loadAdmin(){
  const [data,settings]=await Promise.all([api('/api/admin/items'),api('/api/admin/settings')]);
@@ -107,7 +110,7 @@ async function loadAdmin(){
 }
 function sideNav(){
  const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
- return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&x[0]==='library'?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>管理员已登录 · 数据云端保存</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a><button class="btn sm" data-action="logout">退出登录</button></div></div></aside>';
+ return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&x[0]==='library'?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>测试模式 · 免密码进入</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a></div></div></aside>';
 }
 function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',editor:'内容编辑',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
@@ -211,7 +214,6 @@ async function perform(action,id,el){
   if(id==='assets')await loadAssets();
   adminRender();break;
  }
- case 'logout':await api('/api/admin/logout',{method:'POST'});S.admin=false;loginRender();break;
  case 'new-item':newItem();break;
  case 'edit-item':S.edit=structuredClone(S.items.find(x=>x.id===id));S.tab='editor';adminRender();break;
  case 'add-block':S.edit.content.blocks.push(blankBlock(id));adminRender();break;
@@ -307,13 +309,6 @@ function download(name,content,type){const u=URL.createObjectURL(new Blob([conte
 document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-action]');if(!b)return;
  try{await perform(b.dataset.action,b.dataset.id,b)}catch(err){console.error(err);toast('操作失败：'+err.message)}
-});
-document.addEventListener('submit',async e=>{
- if(e.target.id!=='loginForm')return;e.preventDefault();
- try{
-  await api('/api/admin/login',{method:'POST',...jsonBody({password:$('#adminPass').value})});
-  S.admin=true;await loadAdmin();adminRender();
- }catch(err){loginRender(err.message)}
 });
 document.addEventListener('input',e=>{
  const t=e.target;
