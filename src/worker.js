@@ -66,12 +66,27 @@ function makeSlug(s){
 }
 function allowedUrl(raw){try{const url=new URL(raw);return ['http:','https:'].includes(url.protocol)}catch{return false;}}
 function normalizeItem(incoming,id){
- const kind=['personal','group','document','page','link'].includes(incoming.kind)||/^custom_[a-f0-9]{32}$/.test(incoming.kind||'')?incoming.kind:'page';
+ const kind=['personal','group','document','page','link','bookmarks','profile'].includes(incoming.kind)||/^custom_[a-f0-9]{32}$/.test(incoming.kind||'')?incoming.kind:'page';
  const status=incoming.status==='published'?'published':'draft';
  const content=incoming.content&&typeof incoming.content==='object'?incoming.content:{blocks:[]};
  const blocks=Array.isArray(content.blocks)?content.blocks.slice(0,600):[];
  const members=Array.isArray(content.members)?content.members.slice(0,150):[];
  const normalized={...content,blocks,members};
+ const safeId=value=>/^[a-f0-9-]{32,40}$/i.test(String(value||''))?String(value):crypto.randomUUID();
+ const safeAsset=value=>/^[a-f0-9-]{32,40}$/i.test(String(value||''))?String(value):'';
+ if(kind==='bookmarks'){
+  normalized.entries=(Array.isArray(content.entries)?content.entries:[]).slice(0,200).map(entry=>({
+   id:safeId(entry?.id),title:cleanString(entry?.title,140),url:cleanString(entry?.url,2048),
+   note:cleanString(entry?.note,1200),assetId:safeAsset(entry?.assetId)
+  }));
+ }
+ if(kind==='profile'){
+  normalized.fields=(Array.isArray(content.fields)?content.fields:[]).slice(0,200).map(entry=>({
+   id:safeId(entry?.id),type:['text','link','image'].includes(entry?.type)?entry.type:'text',
+   label:cleanString(entry?.label,120),value:cleanString(entry?.value,3500),
+   assetId:safeAsset(entry?.assetId)
+  }));
+ }
  return {
    id:id||crypto.randomUUID(),kind,status,
    title:cleanString(incoming.title,160)||'未命名内容',
@@ -83,6 +98,35 @@ function normalizeItem(incoming,id){
    thumbnail:cleanString(incoming.thumbnail,240),
    content:JSON.stringify(normalized),
  };
+}
+function validateSpecialContent(incoming){
+ const body=incoming&&typeof incoming==='object'?incoming:{};
+ const content=body.content&&typeof body.content==='object'&&!Array.isArray(body.content)?body.content:{};
+ if(body.kind==='bookmarks'){
+  if(content.entries!==undefined&&!Array.isArray(content.entries))return '网址收藏数据格式错误';
+  const entries=content.entries||[];
+  if(entries.length>200)return '每个收藏夹最多 200 个网址';
+  if(body.status==='published'&&!entries.length)return '请先添加至少一个网址再发布';
+  for(const entry of entries){
+   if(!entry||typeof entry!=='object')return '收藏网址格式错误';
+   if(String(entry.title||'').length>140||String(entry.note||'').length>1200)return '网址名称或备注过长';
+   const address=String(entry.url||'').trim();
+   if(address&&!allowedUrl(address))return '收藏网址必须是 http:// 或 https:// 开头的完整地址';
+   if(body.status==='published'&&(!entry.title?.trim()||!address))return '发布前请填写每个收藏网址的名称和完整链接';
+  }
+ }
+ if(body.kind==='profile'){
+  if(content.fields!==undefined&&!Array.isArray(content.fields))return '名片字段格式错误';
+  const fields=content.fields||[];
+  if(fields.length>200)return '个人名片最多 200 个自定义项目';
+  for(const f of fields){
+   if(!f||typeof f!=='object')return '名片项目格式错误';
+   if(String(f.label||'').length>120||String(f.value||'').length>3500)return '名片项目标签或内容过长';
+   if(f.type==='link'&&f.value&&!allowedUrl(String(f.value)))return '名片网址必须使用 http:// 或 https://';
+   if(f.type&&!['text','link','image'].includes(f.type))return '名片项目类型不支持';
+  }
+ }
+ return '';
 }
 function record(r,includeContent=true){
  if(!r)return null;
@@ -201,7 +245,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.1.1',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.2.0',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -270,7 +314,7 @@ async function handler(req,env){
   if(/[\u0000-\u001f\u007f<>]/.test(name))return fail('分类名称包含不支持的字符');
   const settings=await config(env);
   const categories=settings.custom_types;
-  const reserved=['个人流程','群剧本','DOCX 文档','自定义页面','外部工具'];
+  const reserved=['个人流程','群剧本','DOCX 文档','自定义页面','外部工具','网址收藏','个人名片'];
   if([...reserved,...categories.map(x=>x.name)].some(x=>x.toLocaleLowerCase()===name.toLocaleLowerCase()))return fail('这个分类已经存在',409);
   if(categories.length>=100)return fail('最多创建 100 个自定义分类',409);
   const type={id:'custom_'+crypto.randomUUID().replace(/-/g,''),name};
@@ -284,6 +328,7 @@ async function handler(req,env){
  }
  if(method==='POST'&&p==='/api/admin/items'){
   const body=await parse(req);
+  const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
   const item=normalizeItem(body);
   if(item.kind.startsWith('custom_')&&!(await config(env)).custom_types.some(t=>t.id===item.kind))return fail('自定义分类不存在，请刷新后台后再选择');
   try{return out({ok:true,item:await saveItem(env,item)},201)}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请更换 slug',409);throw e;}
@@ -296,6 +341,7 @@ async function handler(req,env){
   if(method==='PUT'){
    const body=await parse(req);
    if(body.version!==old.version)return fail('版本已更新，请刷新后重试，避免覆盖其他修改',409);
+   const invalid=validateSpecialContent(body);if(invalid)return fail(invalid,400);
    const item=normalizeItem(body,id);
    if(item.kind.startsWith('custom_')&&!(await config(env)).custom_types.some(t=>t.id===item.kind))return fail('自定义分类不存在，请刷新后台后再选择');
    try{return out({ok:true,item:await saveItem(env,item,old)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
