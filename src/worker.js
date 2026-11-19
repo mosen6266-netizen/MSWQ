@@ -354,6 +354,7 @@ async function handler(req,env){
     const signature=base64url(await digest(item.title+'\0'+item.content));
     if(exact.customMetadata?.signature===signature&&exact.customMetadata?.kind===item.kind){
      const fast=item.kind==='personal'&&url.searchParams.get('fast')==='1';
+     const embedded=fast&&url.searchParams.get('embedded')==='1';
      // Only signed/versioned navigation URLs are cacheable. An updated item
      // receives a new versioned URL, so buttons immediately show new content.
      const stableVersion=fast&&url.searchParams.get('v')===String(item.version);
@@ -364,12 +365,13 @@ async function handler(req,env){
       'etag':etag,'x-content-type-options':'nosniff',
       'referrer-policy':'strict-origin-when-cross-origin',
       'content-security-policy':item.kind==='personal'
-       ?"default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; prefetch-src 'self'; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+       ?"default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; prefetch-src 'self'; frame-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
        :"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
      };
      if(item.kind==='personal'&&req.headers.get('if-none-match')?.split(',').map(x=>x.trim()).includes(etag)){
       return new Response(null,{status:304,headers});
      }
+     if(embedded)headers['content-security-policy']=headers['content-security-policy'].replace("frame-ancestors 'none'","frame-ancestors 'self'");
      const originalResponse=new Response(exact.body,{status:200,headers});
      return item.kind==='personal'?decoratePersonalFlowResponse(originalResponse,fast):originalResponse;
     }
@@ -397,7 +399,7 @@ async function handler(req,env){
   }
   return new Response(remote.body,{status:remote.status,headers});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.2',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.3',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
