@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mswq-html",
+  "main": "src/html-host.js",
+  "compatibility_date": "2026-11-18",
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "NEW_R2_BUCKET_NAME"
+    }
+  ]
+}
