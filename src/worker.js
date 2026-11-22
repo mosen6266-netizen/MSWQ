@@ -509,16 +509,14 @@ async function handler(req,env){
   return publicDocxPage(ASSETS.docx);
  }
  if(method==='GET'&&p==='/api/docx/session')return out({admin:false});
+ // Public DOCX templates are served locally from MSWQ's own D1/KV, not through MS_KHMB.
  if(p.startsWith('/api/docx/')){
   if(method!=='GET')return fail('公开文档服务不支持管理操作',405);
   if(!/^\/api\/docx\/templates(?:\/[a-f0-9-]{16,60}\/(?:docx|version))?$/.test(p))return fail('文档接口不存在',404);
-  const target='https://ms-khmb.mosen6266-ms007.workers.dev'+p.replace('/api/docx/','/api/')+url.search;
-  const remote=env.DOCX_SERVICE?await env.DOCX_SERVICE.fetch(new Request(target,{method:'GET'})):await fetch(target);
-  const headers=new Headers({'cache-control':'no-store','x-content-type-options':'nosniff'});
-  for(const key of ['content-type','x-template-version','content-disposition','content-length']){
-   const value=remote.headers.get(key);if(value)headers.set(key,value);
-  }
-  return new Response(remote.body,{status:remote.status,headers});
+  if(!env.DOCX_DB||!env.DOCX_KV)return fail('MSWQ DOCX 独立模板存储未连接',503);
+  const localPath=p.replace('/api/docx/','/api/');
+  const target=new URL(localPath+url.search,url.origin);
+  return DOCX_ADMIN_BACKEND.fetch(new Request(target,{method:'GET'}),{DB:env.DOCX_DB,KHMB:env.DOCX_KV},{});
  }
  if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.3',testMode:MSWQ_TEST_OPEN_ADMIN});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
@@ -576,7 +574,7 @@ async function handler(req,env){
   const validTemplate=/^\/api\/templates(?:\/[a-f0-9-]{16,60}(?:\/(?:docx|version|rollback))?)?$/i.test(apiPath);
   if(!validTemplate&&apiPath!=='/api/order')return fail('DOCX 管理接口不存在',404);
   if(!['GET','POST','PUT','PATCH','DELETE'].includes(method))return fail('不支持的方法',405);
-  if(!env.DOCX_DB||!env.DOCX_KV)return fail('DOCX 原模板存储未连接',503);
+  if(!env.DOCX_DB||!env.DOCX_KV)return fail('MSWQ DOCX 独立模板存储未连接',503);
   const target=new URL(apiPath+url.search,url.origin);
   return DOCX_ADMIN_BACKEND.fetch(new Request(target,req),{DB:env.DOCX_DB,KHMB:env.DOCX_KV},{});
  }
