@@ -766,6 +766,8 @@ async function handler(req,env){
   return out({ok:true});
  }
 
+ if(method==='GET'&&p==='/api/admin/backup/export')return mswqFullBackupResponse(env);
+ if(method==='GET'&&p==='/api/admin/backup/inventory')return mswqBackupInventoryResponse(env);
  if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,twoFactor:true});
  if(method==='POST'&&p==='/api/admin/logout')return out({ok:true},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
  if(method==='POST'&&p==='/api/admin/types'){
