@@ -264,8 +264,11 @@ function resolvedItemSubgroup(item,settings){
  return item;
 }
 async function fetchPublic(env){
- const items=await env.DB.prepare("SELECT * FROM items WHERE status='published' ORDER BY sort_order ASC, updated_at DESC").all();
- const settings=await config(env);
+ // Fetch independent homepage data in parallel instead of serial round-trips.
+ const [items,settings]=await Promise.all([
+  env.DB.prepare("SELECT * FROM items WHERE status='published' ORDER BY sort_order ASC, updated_at DESC").all(),
+  config(env)
+ ]);
  const publicSettings={...settings};delete publicSettings.item_subgroups;
  return {ok:true,settings:publicSettings,items:(items.results||[]).map(r=>resolvedItemSubgroup(record(r,false),settings))};
 }
@@ -513,7 +516,7 @@ async function handler(req,env){
        ?"default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; prefetch-src 'self'; frame-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
        :"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
      };
-     if(req.headers.get('if-none-match')?.split(',').map(x=>x.trim()).includes(etag)){
+     if(req.headers.get('if-none-match')?.split(',').map(x=>x.trim().replace(/^W\//i,'')).includes(etag)){
       return new Response(null,{status:304,headers});
      }
      if(embedded)headers['content-security-policy']=headers['content-security-policy'].replace("frame-ancestors 'none'","frame-ancestors 'self'");
