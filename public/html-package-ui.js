@@ -25,7 +25,9 @@ const styles=[
 '.html-manager-buttons{margin-top:2px;gap:7px}',
 '.html-manager-buttons .btn{margin:0;white-space:nowrap}',
 '.mswq-pkg-panel{margin-bottom:17px}',
-'.mswq-pkg-files button{margin-left:10px}'
+'.mswq-pkg-files button{margin-left:10px}',
+'.html-manager-item[hidden]{display:none!important}',
+'.mswq-source-preview{display:block;width:100%;height:min(56vh,600px);resize:vertical;padding:12px;border:1px solid #7775;border-radius:10px;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow:auto}'
 
 ];const style=document.createElement('style');style.textContent=styles.join('\n');document.head.append(style);
 function alertPkg(message){const n=$('#mswqPkgNotice');if(n){n.textContent=message;n.classList.add('mswq-pkg-warning')}else alert(message)}
@@ -128,6 +130,17 @@ async function source(id,path=''){
  const info=path?null:await getPackage(id);
  startDownload(sourceUrl(id,path||info?.entry||''),path||info?.entry||filename(id));
 }
+async function previewCode(id){
+ const info=await getPackage(id),path=info?.entry||filename(id);
+ const bytes=await getBytes(sourceUrl(id,info?.entry||''));
+ const max=2000000;
+ const shown=bytes.length>max?bytes.slice(0,max):bytes;
+ const content=new TextDecoder('utf-8').decode(shown);
+ modal('<h2>查看原始 HTML 源码</h2><p class="muted small">'+esc(path)+' · '+Math.ceil(bytes.length/1024)+' KB'+
+ (bytes.length>max?' · 文件较大，仅显示前 2 MB，下载可获得完整内容':'')+'</p>'+
+ '<textarea class="mswq-source-preview" readonly spellcheck="false">'+esc(content)+'</textarea>'+
+ '<div class="flex end" style="margin-top:12px"><button class="btn green" data-pkg="source" data-id="'+esc(id)+'">下载完整 HTML</button><button class="btn" data-pkg="close">关闭</button></div>');
+}
 async function zipDownload(id,button){
  if(button){button.disabled=true;button.textContent='正在整理文件…';}
  try{
@@ -185,6 +198,7 @@ document.addEventListener('click',async ev=>{
   if(action==='upload')await upload();
   if(action==='details')await details(id);
   if(action==='source')await source(id);
+  if(action==='code')await previewCode(id);
   if(action==='file-source')await source(id,b.dataset.file);
   if(action==='download')await zipDownload(id,b);
   if(action==='rename')await rename(id);
