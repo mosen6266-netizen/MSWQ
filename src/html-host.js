@@ -12,7 +12,7 @@ function normalizedClientIP(value){
   }catch{return ''}
  }
  const parts=t.split('.');
- if(parts.length!==4||parts.some(x=>!/(?:0|[1-9]\d{0,2})$/.test(x)||Number(x)>255))return '';
+ if(parts.length!==4||parts.some(x=>!/^(?:0|[1-9]\d{0,2})$/.test(x)||Number(x)>255))return '';
  return parts.map(Number).join('.');
 }
 async function allowedIp(request,env){
