@@ -1,3 +1,15 @@
+## 2026-11-22 · 新账号一份 ZIP 完整重建（GitHub Releases）
+
+- 当前 MSWQ 后台「导入与备份」→「下载完整迁移 ZIP」：将源码、完整主 D1 / DOCX D1、全部 R2 原始内容与每个对象的 metadata、全部 DOCX KV 及历史版本重新实时打包。
+- 为解决上传 GitHub 的大小限制，完整 ZIP 应作为**新 GitHub 仓库 Releases 的附件**（Tag mswq-migration），而不是提交到源码 git 历史。GitHub Release 附件单个文件需小于 2 GiB。
+- 最新导出器对 R2 中完全相同 ETag + 大小的文件去重，只在 ZIP 存一份字节，但每个 R2 key 的目录信息、元数据仍独立保留并在恢复时重新生成，不损失原始对象数。
+- 给新 GPT 的提示词见 [PROMPT-FOR-NEW-GPT.md](PROMPT-FOR-NEW-GPT.md)，完整方法见 [REBUILD-MSWQ.md](REBUILD-MSWQ.md)，自动恢复脚本为 [scripts/rebuild-from-release.py](scripts/rebuild-from-release.py)。
+- 新 GPT 在用户授权的新 GitHub + Cloudflare 环境执行创建 D1/R2/KV、完整导入、部署 mswq 和 mswq-html、生成全新 Google Authenticator 密钥、功能验证。用户无需再手工往 Cloudflare 上传数据。
+- 验收成功后删除 GitHub Release 的迁移 ZIP 附件，保留 GitHub 源码、新云端正式数据和旧站原状；不要在未经完整验证前删除唯一备份。
+- 自动恢复脚本需要在有权限的云端电脑运行，Cloudflare/GitHub OAuth 连接器凭据不能自动假定可供 Python/Wrangler 读取；应通过新的 GPT 连接工具/浏览器授权或授权环境中的受限 API Token 完成。绝不导出旧账号密码或动态密钥。
+
+---
+
 ## 2026-11-22 · 完整迁移备份（双重验证后台）
 
 - 后台「导入与备份」新增 **下载完整迁移 ZIP**：实时流式导出所有 D1 业务表结构和行、全部 R2 原始对象及 HTTP/自定义 metadata、DOCX KV 原始内容与历史版本，并包含独立 ZIP 源码快照。
