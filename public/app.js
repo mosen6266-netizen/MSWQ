@@ -50,6 +50,25 @@ function orderedCategoryIds(settings){
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
 const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',libraryCategory:'all',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null,subgroupParent:'',icons:[],ipAccess:{ips:[],currentIp:'',updatedAt:''}};
 let toastTimer;
+// Preserve the already-painted homepage when opening lightweight public cards.
+let homeSnapshot=null;
+let publicNavSeq=0;
+function keepHomeDOM(){
+ if(location.pathname!=='/'||!root.querySelector('.site-content'))return;
+ const fragment=document.createDocumentFragment(),scrollY=window.scrollY;
+ while(root.firstChild)fragment.appendChild(root.firstChild);
+ homeSnapshot={fragment,scrollY};
+}
+function restoreHomeDOM(){
+ if(!homeSnapshot)return false;
+ ++publicNavSeq;
+ const snapshot=homeSnapshot;homeSnapshot=null;
+ root.replaceChildren(snapshot.fragment);
+ document.title='MSWQ · 内容与工具中心';
+ S.viewer=null;S.preview=false;
+ requestAnimationFrame(()=>window.scrollTo(0,snapshot.scrollY));
+ return true;
+}
 let draggedCategory='';
 let draggedContent='';
 let draggedContentGroup='';
@@ -73,6 +92,8 @@ function field(name,value,prop,placeholder='',kind='input'){
 function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" data-mswq-back="true" aria-label="返回">返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
 function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
 async function showHome(reuseLoaded=false){
+ ++publicNavSeq;
+ if(reuseLoaded&&restoreHomeDOM())return;
  document.title='MSWQ · 内容与工具中心';S.preview=false;
  root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
  try{const x=(reuseLoaded&&Array.isArray(S.items)&&S.settings)?{items:S.items,settings:S.settings}:await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);const visibleTypes=orderedCategoryIds(S.settings).filter(k=>!(S.settings.hidden_types||[]).includes(k));const remembered=history.state?.mswqHomeFilter;S.filter=(remembered==='all'||visibleTypes.includes(remembered))?remembered:(visibleTypes[0]||'all');if(S.filter==='bookmarks'){try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}}homeRender();}
@@ -83,7 +104,9 @@ async function loadPublicBookmarks(){
  if(S.bookmarksPromise)return S.bookmarksPromise;
  const collections=S.items.filter(item=>item.kind==='bookmarks'&&item.status==='published');
  S.bookmarksPromise=(async()=>{
-  const details=await Promise.all(collections.map(item=>api('/api/public/item/'+encodeURIComponent(item.slug))));
+  const details=await Promise.all(collections.map(item=>
+   item.content?.entries?Promise.resolve({item}):api('/api/public/item/'+encodeURIComponent(item.slug))
+  ));
   S.bookmarkEntries=details.flatMap(({item})=>(Array.isArray(item.content?.entries)?item.content.entries:[])
    .filter(entry=>entry&&absoluteHttpUrl(entry.url))
    .map(entry=>({...entry,collectionTitle:item.title||''})));
@@ -140,7 +163,19 @@ function homeRender(){
    content=cats.map(cat=>groupCategory(items.filter(x=>frontTabForItem(x)===cat),cat,true)).join('');
   }else content=groupCategory(items,S.filter,false);
  }
- root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="'+(isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…')+'" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':esc(typeNames[t]))+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+count+' 个'+(isBookmarkTab?'网址':'内容')+'</span></div>'+content+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
+ // Keep the input, navbar and already-loaded images mounted on filter/search.
+ const existingResults=document.getElementById('mswqHomeResults');
+ if(existingResults&&location.pathname==='/'){
+  existingResults.innerHTML=content;
+  const counter=document.getElementById('mswqHomeCount');
+  if(counter)counter.textContent=count+' 个'+(isBookmarkTab?'网址':'内容');
+  document.querySelectorAll('.filters button[data-action="filter"]').forEach(button=>
+   button.classList.toggle('active',button.dataset.id===S.filter));
+  const search=document.getElementById('homeSearch');
+  if(search)search.placeholder=isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…';
+  return;
+ }
+ root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="'+(isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…')+'" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':esc(typeNames[t]))+'</button>').join('')+'<span id="mswqHomeCount" class="muted small" style="margin-left:auto">'+count+' 个'+(isBookmarkTab?'网址':'内容')+'</span></div><div id="mswqHomeResults">'+content+'</div></main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
 function anchorButton(label,url){
  if(!urlOk(url))return '';
@@ -244,7 +279,8 @@ function openMediaPreview(id,kind,label){
 }
 
 async function showReader(slugText,localItem=null,preloadedItem=null){
- root.innerHTML='<div class="loading center" style="padding:100px">正在打开内容…</div>';
+ const navSeq=++publicNavSeq;
+ root.innerHTML=publicHeader(true)+'<main class="site-content loading center" style="padding:70px">正在打开内容…</main>';
  try{
  // DOCX template-specific share links are a virtual workspace, not D1 items.
  // A /view/docx-workspace?template=<id> link must work without an additional
@@ -269,6 +305,7 @@ async function showReader(slugText,localItem=null,preloadedItem=null){
    item=one.item;S.settings=site.settings;applyCustomTypes(S.settings);
   }else item=(await api('/api/public/item/'+encodeURIComponent(slugText))).item;
  }
+ if(navSeq!==publicNavSeq)return;
  S.viewer=item;S.preview=!!localItem;
  if(!S.settings){const pub=await api('/api/public');S.settings=pub.settings;applyCustomTypes(S.settings);}
  document.title=item.title+' · MSWQ';
@@ -1242,14 +1279,18 @@ async function importJSON(){
 function openModal(content){closeModal();const wrap=document.createElement('div');wrap.id='currentModal';wrap.className='modal-backdrop';wrap.innerHTML='<div class="modal" role="dialog" aria-modal="true">'+content+'</div>';document.body.appendChild(wrap)}
 function closeModal(){$('#currentModal')?.remove()}
 function download(name,content,type){const u=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
-// DOCX cards on the homepage open inside the existing MSWQ shell.
-// This avoids downloading/parsing the app and waiting for the same data again.
+// Lightweight public cards navigate inside the existing shell.
+// Personal/group pages still use their original exported standalone HTML.
 window.addEventListener('popstate',()=>{
  if(S.admin)return;
- if(location.pathname==='/'&&!location.search){showHome(true);return;}
+ if(location.pathname==='/'&&!location.search){
+  if(!restoreHomeDOM())showHome(true);
+  return;
+ }
  if(location.pathname.startsWith('/view/')){
   const slug=decodeURIComponent(location.pathname.slice(6));
-  const item=(S.items||[]).find(x=>x.kind==='document'&&x.slug===slug);
+  const item=(S.items||[]).find(x=>x.slug===slug&&
+   !['personal','group','html'].includes(x.kind)&&x.content);
   showReader(slug,null,item||null);return;
  }
  if((location.pathname==='/docx'||location.pathname==='/docx/')&&
@@ -1263,17 +1304,19 @@ document.addEventListener('click',async e=>{
   const anchor=e.target.closest('a.tile[href]');
   if(anchor&&!anchor.hasAttribute('download')&&!anchor.hasAttribute('target')){
    const dest=new URL(anchor.href,location.origin);
-   const item=(S.items||[]).find(x=>x.kind==='document'&&itemHref(x)===dest.pathname);
+   const item=(S.items||[]).find(x=>itemHref(x)===dest.pathname&&
+    !['personal','group','html'].includes(x.kind));
    if(item&&dest.origin===location.origin){
     e.preventDefault();
-    history.pushState({mswqFastDocx:true},'',dest.pathname+dest.search);
-    showReader(item.slug,null,item);
+    keepHomeDOM();
+    history.pushState({mswqQuickRoute:true},'',dest.pathname+dest.search);
+    showReader(item.slug,null,item.content?item:null);
     return;
    }
   }
  }
  const back=e.target.closest('a[data-mswq-back="true"]');
- if(back&&history.state?.mswqFastDocx&&!e.defaultPrevented&&e.button===0&&
+ if(back&&(history.state?.mswqQuickRoute||history.state?.mswqFastDocx)&&!e.defaultPrevented&&e.button===0&&
     !e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
   e.preventDefault();
   history.back();
@@ -1366,8 +1409,7 @@ document.addEventListener('dragend',()=>{
 document.addEventListener('input',e=>{
  const t=e.target;
  if(t.id==='homeSearch'){
-  const caret=t.selectionStart;S.search=t.value;homeRender();
-  const next=$('#homeSearch');next.focus();next.setSelectionRange(caret,caret);return;
+  S.search=t.value;homeRender();return;
  }
  if(t.id==='adminSearch'){S.search=t.value;const caret=t.selectionStart;const panel=$('#adminPanel');if(panel)panel.innerHTML=adminPanel();else adminRender();const n=$('#adminSearch');n?.focus();n?.setSelectionRange(caret,caret);return;}
  if(t.dataset.bookmarkIndex!==undefined&&S.edit?.kind==='bookmarks'){
