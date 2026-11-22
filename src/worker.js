@@ -844,6 +844,17 @@ async function handler(req,env){
    await env.DB.prepare('INSERT INTO revisions(id,item_id,version,data,created_at) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),id,old.version,JSON.stringify(record(old)),iso()).run();
    await env.DB.prepare('DELETE FROM items WHERE id=?').bind(id).run();
    if(['personal','group'].includes(old.kind))await env.FILES.delete('published-readers/'+id+'.html');
+   // Remove stale subgroup assignments for deleted items, including old test IDs.
+   // These are independent display preferences, not part of the signed reader content.
+   const cfg=await config(env),overrides=cfg.item_subgroups||{};
+   if(Object.keys(overrides).length){
+    const active=await env.DB.prepare('SELECT id FROM items').all();
+    const valid=new Set((active.results||[]).map(row=>row.id));
+    const remaining=Object.fromEntries(Object.entries(overrides).filter(([key])=>valid.has(key)));
+    if(Object.keys(remaining).length!==Object.keys(overrides).length)
+     await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+      .bind('item_subgroups',JSON.stringify(remaining)).run();
+   }
    return out({ok:true});
   }
  }
