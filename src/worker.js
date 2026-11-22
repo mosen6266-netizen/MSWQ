@@ -215,7 +215,7 @@ function record(r,includeContent=true){
 }
 async function config(env){
  const rows=await env.DB.prepare('SELECT key,value FROM settings').all();
- const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[],hidden_types:[],type_labels:{},deleted_types:[],type_order:[],subgroups:[]};
+ const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[],hidden_types:[],type_labels:{},deleted_types:[],type_order:[],subgroups:[],item_subgroups:{}};
  for(const {key,value} of rows.results||[]){
   if(key==='custom_types'){
    try{
@@ -232,6 +232,15 @@ async function config(env){
     const parsed=JSON.parse(value);
     if(Array.isArray(parsed))out.subgroups=parsed.slice(0,200).filter(x=>x&&/^[a-f0-9-]{36}$/i.test(x.id)&&typeof x.category==='string'&&typeof x.name==='string').map(x=>({id:x.id,category:x.category,name:cleanString(x.name,40)}));
    }catch{}
+  }else if(key==='item_subgroups'){
+   try{
+    const parsed=JSON.parse(value);
+    if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed)){
+     for(const [id,subgroup] of Object.entries(parsed).slice(0,3000)){
+      if(/^[a-f0-9-]{36}$/i.test(id)&&(subgroup===''||/^[a-f0-9-]{36}$/i.test(String(subgroup))))out.item_subgroups[id]=String(subgroup);
+     }
+    }
+   }catch{}
   }else if(key==='type_labels'){
    try{
     const parsed=JSON.parse(value);
@@ -246,9 +255,19 @@ async function config(env){
  }
  return out;
 }
+function resolvedItemSubgroup(item,settings){
+ if(item&&Object.hasOwn(settings?.item_subgroups||{},item.id)){
+  const assigned=settings.item_subgroups[item.id];
+  item.subgroupId=assigned;
+  if(item.content&&typeof item.content==='object')item.content.subgroupId=assigned;
+ }
+ return item;
+}
 async function fetchPublic(env){
  const items=await env.DB.prepare("SELECT * FROM items WHERE status='published' ORDER BY sort_order ASC, updated_at DESC").all();
- return {ok:true,settings:await config(env),items:(items.results||[]).map(r=>record(r,false))};
+ const settings=await config(env);
+ const publicSettings={...settings};delete publicSettings.item_subgroups;
+ return {ok:true,settings:publicSettings,items:(items.results||[]).map(r=>resolvedItemSubgroup(record(r,false),settings))};
 }
 async function saveItem(env,item,old=null) {
  const now=iso();
@@ -506,7 +525,7 @@ async function handler(req,env){
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
   const row=await env.DB.prepare("SELECT * FROM items WHERE slug=? AND status='published'").bind(slug).first();
-  return row?out({ok:true,item:record(row)}):fail('页面不存在或尚未发布',404);
+  return row?out({ok:true,item:resolvedItemSubgroup(record(row),await config(env))}):fail('页面不存在或尚未发布',404);
  }
  if(['GET','HEAD'].includes(method)&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop(),req);
  if(['GET','HEAD'].includes(method)&&p.startsWith('/api/icon/'))return iconFile(env,p.split('/').pop(),req);
@@ -716,9 +735,30 @@ async function handler(req,env){
   if(results.some(result=>Number(result.meta?.changes??0)!==1))return fail('排序更新未完全成功，请刷新列表核对',409);
   return out({ok:true,category,order});
  }
+ // Assign card to a child group without touching its content or version.
+ // This preserves signed original reader HTML and unchanged shared links.
+ if(method==='PUT'&&p==='/api/admin/items/subgroup'){
+  const body=await parse(req,3000),id=String(body?.itemId||''),
+   subgroupId=String(body?.subgroupId??''),expected=String(body?.expectedSubgroupId??'');
+  if(!/^[a-f0-9-]{36}$/i.test(id)||subgroupId&&!/^[a-f0-9-]{36}$/i.test(subgroupId)||
+      expected&&!/^[a-f0-9-]{36}$/i.test(expected))return fail('无效的工具或子分组编号',400);
+  const row=await env.DB.prepare('SELECT id,kind,category,content FROM items WHERE id=?').bind(id).first();
+  if(!row)return fail('找不到这个工具，请刷新列表',404);
+  const settings=await config(env),category=frontTabForItem(row);
+  if(subgroupId&&!settings.subgroups.some(g=>g.id===subgroupId&&g.category===category))return fail('目标子分组不属于当前主分类',400);
+  const existing=resolvedItemSubgroup(record(row,false),settings).subgroupId;
+  if(existing!==expected)return fail('该工具已被其他操作移动，请刷新后重试',409);
+  if(existing===subgroupId)return out({ok:true,itemId:id,subgroupId});
+  const updated={...settings.item_subgroups,[id]:subgroupId};
+  await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+    .bind('item_subgroups',JSON.stringify(updated)).run();
+  return out({ok:true,itemId:id,subgroupId});
+ }
  if(method==='GET'&&p==='/api/admin/items'){
-  const rows=await env.DB.prepare('SELECT * FROM items ORDER BY sort_order ASC,updated_at DESC').all();
-  return out({ok:true,items:(rows.results||[]).map(r=>record(r))});
+  const [rows,settings]=await Promise.all([
+   env.DB.prepare('SELECT * FROM items ORDER BY sort_order ASC,updated_at DESC').all(),config(env)
+  ]);
+  return out({ok:true,items:(rows.results||[]).map(r=>resolvedItemSubgroup(record(r),settings))});
  }
  if(method==='POST'&&p==='/api/admin/items'){
   const body=await parse(req);
@@ -774,7 +814,7 @@ async function handler(req,env){
  if(match){
   const id=match[1],old=await env.DB.prepare('SELECT * FROM items WHERE id=?').bind(id).first();
   if(!old)return fail('内容不存在',404);
-  if(method==='GET')return out({ok:true,item:record(old)});
+  if(method==='GET')return out({ok:true,item:resolvedItemSubgroup(record(old),await config(env))});
   if(method==='PUT'){
    const body=await parse(req);
    if(body.version!==old.version)return fail('版本已更新，请刷新后重试，避免覆盖其他修改',409);
@@ -787,7 +827,18 @@ async function handler(req,env){
      if(availability.hidden_types.includes(displayCategory))return fail('所选前台分类已隐藏，请先显示或更换分类',409);
     }else if((item.kind.startsWith('custom_')&&!availability.custom_types.some(t=>t.id===item.kind))||(availability.deleted_types.includes(item.kind)&&old.kind!==item.kind))return fail('分类已删除，请先恢复',409);
     const htmlError=await verifyHtmlItem(env,item);if(htmlError)return fail(htmlError,400);
-   try{return out({ok:true,item:await saveItem(env,item,old)})}catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
+   try{
+    const result=await saveItem(env,item,old);
+    if(Object.hasOwn(availability.item_subgroups,id)){
+     const subgroupId=String(body?.content?.subgroupId||'');
+     if(subgroupId!==availability.item_subgroups[id]){
+      const updated={...availability.item_subgroups,[id]:subgroupId};
+      await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+       .bind('item_subgroups',JSON.stringify(updated)).run();
+     }
+    }
+    return out({ok:true,item:result});
+   }catch(e){if(String(e).includes('UNIQUE'))return fail('访问路径重复，请使用其他公开路径（slug）',409);throw e;}
   }
   if(method==='DELETE'){
    await env.DB.prepare('INSERT INTO revisions(id,item_id,version,data,created_at) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),id,old.version,JSON.stringify(record(old)),iso()).run();
