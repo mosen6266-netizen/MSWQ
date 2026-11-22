@@ -932,6 +932,13 @@ function importHtml(){
  return row('导入旧版流程','从上传的原始编辑器导出「编辑备份 JSON」，再上传到这里',
  '<div class="notice">支持「群剧本」和「个人流程」两种 JSON。导入后默认是草稿，不会直接对外公开。包含的附件会尽可能导入到本站文件库。</div><div class="field" style="margin-top:15px"><label>选择 .json 备份文件</label><input type="file" id="importFile" accept=".json,application/json"></div><button class="btn primary" data-action="import-json">导入到草稿库</button><hr style="border:0;border-top:1px solid #444;margin:25px 0"><h3>平台数据备份</h3><p class="small muted">导出内容、设置和页面结构为 JSON。媒体文件需要另外保留，导出的 JSON 不含媒体二进制内容。</p><button class="btn" data-action="export-all">导出本站完整 JSON</button><p style="margin-top:20px" class="small muted">目前支持的直接导入格式为原版流程备份；本站 JSON 主要用于恢复依据，不提供一键整体恢复。</p>');
 }
+function upsertAdminItem(item){
+ if(!item?.id)return;
+ const value={...item,subgroupId:item.subgroupId||item.content?.subgroupId||''};
+ S.items=S.items.filter(x=>x.id!==item.id).concat(value).sort((a,b)=>
+  (Number(a.sort_order)||0)-(Number(b.sort_order)||0)||
+  String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
+}
 async function refreshPanel(){if(!S.admin)return;await loadAdmin();adminRender()}
 // Small session-local metadata cache; original media remains on R2.
 const mediaState={assets:{stamp:0,pending:null},icons:{stamp:0,pending:null}};
@@ -1014,11 +1021,9 @@ async function assignContentSubgroup(id,category,targetSubgroup){
  await api('/api/admin/items/subgroup',{method:'PUT',...jsonBody({
   itemId:id,subgroupId:targetSubgroup,expectedSubgroupId:existing
  })});
- // Replace only the content area; keep the current tab, page position and links.
- const scroller=document.querySelector('.admin-main'),scrollTop=scroller?.scrollTop||0;
- await loadAdmin();
+ current.subgroupId=targetSubgroup;
+ current.content={...(current.content||{}),subgroupId:targetSubgroup};
  const panel=$('#adminPanel');if(panel)panel.innerHTML=adminPanel();else adminRender();
- if(scroller)scroller.scrollTop=scrollTop;
  toast('工具已移入'+(targetSubgroup?'「'+subgroupTitle(targetSubgroup)+'」':'「其他内容」')+'，前台同步更新');
 }
 async function perform(action,id,el){
@@ -1101,7 +1106,7 @@ case 'retry-bookmarks':{
    const body={kind:'html',status:'published',title,category,description:($('#quickHtmlDescription')?.value||'').trim(),sort_order:1000,
     slug:'html-'+crypto.randomUUID().replace(/-/g,'').slice(0,16),content:{htmlAssetId},tags:[]};
    const result=await api('/api/admin/items',{method:'POST',...jsonBody(body)});
-   closeModal();await loadAdmin();S.tab='library';adminRender();
+   upsertAdminItem(result.item);closeModal();S.tab='library';adminRender();
    openModal('<h2>HTML 卡片已发布</h2><p>「'+esc(title)+'」已经放在「'+esc(typeNames[category]||category)+'」分类。点击卡片会在新标签页打开完整 HTML 页面。</p><div class="flex end"><button class="btn" data-action="copy-html-asset" data-id="'+esc(htmlAssetId)+'">复制直达链接</button><a class="btn green" href="'+esc(shareUrl(result.item))+'" target="_blank" rel="noopener noreferrer">打开完整页面</a><button class="btn" data-action="close-modal">完成</button></div>');
   }finally{el.disabled=false;}
   break;
@@ -1125,7 +1130,7 @@ case 'retry-bookmarks':{
     description:'',category,tags:[],sort_order:1000,thumbnail:'',
     content:{docUrl:'/docx',templateId,blocks:[],members:[]}};
    const created=await api('/api/admin/items',{method:'POST',...jsonBody(item)});
-   await loadAdmin();S.tab='library';adminRender();
+   upsertAdminItem(created.item);S.tab='library';adminRender();
    const fullUrl=location.origin+itemHref(created.item);
    openModal('<h2>DOCX 入口已发布</h2><p>「'+esc(name)+'」已出现在前台「'+esc(typeNames[category]||'所选分类')+'」标签中，点击即可直达选中的模板。</p>'+
     '<div class="field"><label>自动生成的前台链接</label><input readonly value="'+esc(fullUrl)+'"></div>'+
@@ -1245,7 +1250,8 @@ case 'retry-bookmarks':{
  case 'publish-item':await saveCurrent(true);break;
  case 'quick-status':{
   const original=S.items.find(x=>x.id===id),item=structuredClone(original);item.status=item.status==='published'?'draft':'published';
-  await api('/api/admin/items/'+id,{method:'PUT',...jsonBody(item)});await refreshPanel();toast(item.status==='published'?'内容已发布':'内容已下架');break;
+  const saved=await api('/api/admin/items/'+id,{method:'PUT',...jsonBody(item)});
+  upsertAdminItem(saved.item);adminRender();toast(item.status==='published'?'内容已发布':'内容已下架');break;
  }
  case 'copy-url':
   await navigator.clipboard.writeText(shareUrl(S.items.find(x=>x.id===id)));toast('公开链接已复制');break;
@@ -1258,7 +1264,9 @@ case 'retry-bookmarks':{
   await showReader(S.edit.slug,S.edit);break;
  case 'delete-item':{
   if(!S.edit?.id||!confirm('确定永久删除「'+S.edit.title+'」？删除后公开链接将失效。'))return;
-  await api('/api/admin/items/'+S.edit.id,{method:'DELETE'});S.edit=null;S.tab=S.returnTab||'library';await refreshPanel();toast('已删除');break;
+  await api('/api/admin/items/'+S.edit.id,{method:'DELETE'});
+  S.items=S.items.filter(x=>x.id!==S.edit.id);
+  S.edit=null;S.tab=S.returnTab||'library';adminRender();toast('已删除');break;
  }
  case 'revisions':{
   const data=await api('/api/admin/revisions?id='+encodeURIComponent(S.edit.id));
@@ -1267,7 +1275,7 @@ case 'retry-bookmarks':{
  case 'restore':{
   if(!confirm('恢复历史版本将覆盖当前内容，继续吗？'))return;
   const v=await api('/api/admin/restore',{method:'POST',...jsonBody({id})});
-  S.edit=v.item;closeModal();await loadAdmin();adminRender();toast('已恢复历史版本');break;
+  S.edit=v.item;upsertAdminItem(v.item);closeModal();adminRender();toast('已恢复历史版本');break;
  }
  case 'pick-asset':S.picking=Number(id);await loadAssets();openModal('<h2>选择文件</h2><p>从已上传的素材库选择</p><div class="asset-grid">'+S.assets.map(a=>assetCard(a,true)).join('')+'</div><div style="margin-top:15px"><button class="btn" data-action="close-modal">取消</button></div>');break;
  case 'select-asset':
@@ -1372,7 +1380,7 @@ async function saveCurrent(publish){
  const isUpdate=!!item.id;
  const opts={method:isUpdate?'PUT':'POST',...jsonBody(item)};
  const res=await api('/api/admin/items'+(isUpdate?'/'+item.id:''),opts);
- S.edit=res.item;await loadAdmin();adminRender();toast(publish?'已发布，公开页面立即生效':'内容已保存');
+ S.edit=res.item;upsertAdminItem(res.item);adminRender();toast(publish?'已发布，公开页面立即生效':'内容已保存');
 }
 async function saveSubgroups(next,message){
  const data=await api('/api/admin/settings',{method:'PUT',...jsonBody({subgroups:next})});
