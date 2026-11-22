@@ -1,10 +1,35 @@
 // Isolated public origin for user-uploaded HTML tools. No database, session,
 // admin routes, or privileged service bindings are available to this Worker.
+// Same R2 policy file as the main MSWQ Worker. No D1 or admin access.
+const IP_ACCESS_KEY='mswq-private/ip-allowlist-v1.json';
+function normalizedClientIP(value){
+ const t=String(value||'').trim();
+ if(t.includes(':')){
+  if(!/^[0-9a-fA-F:.]+$/.test(t))return '';
+  try{
+   const host=new URL('http://['+t+']/').hostname;
+   return host.startsWith('[')&&host.endsWith(']')?host.slice(1,-1).toLowerCase():'';
+  }catch{return ''}
+ }
+ const parts=t.split('.');
+ if(parts.length!==4||parts.some(x=>!/(?:0|[1-9]\d{0,2})$/.test(x)||Number(x)>255))return '';
+ return parts.map(Number).join('.');
+}
+async function allowedIp(request,env){
+ const ip=normalizedClientIP(request.headers.get('cf-connecting-ip'));
+ if(!ip)return false;
+ const file=await env.FILES.get(IP_ACCESS_KEY);
+ if(!file)return false;
+ try{
+  const policy=JSON.parse(await file.text());
+  return Array.isArray(policy.ips)&&policy.ips.includes(ip);
+ }catch{return false}
+}
 const UUID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 function response(file,mime,method){
  return new Response(method==='HEAD'?null:file.body,{status:200,headers:{
   'content-type':mime,
-  'cache-control':mime.startsWith('text/html')?'public, max-age=30':'public, max-age=120',
+  'cache-control':'private, no-store',
   'x-content-type-options':'nosniff',
   'referrer-policy':'no-referrer',
   'cross-origin-opener-policy':'same-origin',
@@ -14,6 +39,7 @@ function response(file,mime,method){
 export default {
  async fetch(request,env){
   if(!['GET','HEAD'].includes(request.method))return new Response('Method Not Allowed',{status:405,headers:{allow:'GET, HEAD'}});
+  if(!await allowedIp(request,env))return new Response('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>访问受限</title><body style="background:#141516;color:white;font:16px system-ui,sans-serif;text-align:center;padding:80px"><h1>403 · IP 未获授权</h1><p>请联系管理员将你的 IP 加入 MSWQ 白名单。</p></body></html>',{status:403,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
   const url=new URL(request.url),match=url.pathname.match(/^\/html\/([a-f0-9-]{36})(?:\/(.*))?$/i);
   if(!match||!UUID.test(match[1]))return new Response('Not Found',{status:404});
   const id=match[1];
