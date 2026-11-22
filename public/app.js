@@ -605,6 +605,7 @@ function htmlFilesHtml(){
     '<div class="muted tiny">'+Math.ceil(a.size/1024)+' KB · 上传于 '+esc(fmt(a.created_at)||'未知日期')+'</div><div>'+linked+'</div></div></div>'+
     '<div class="flex html-manager-buttons" style="flex-wrap:wrap">'+
     '<button class="btn sm" data-pkg="details" data-id="'+esc(a.id)+'">查看文件</button>'+
+    '<button class="btn sm" data-pkg="code" data-id="'+esc(a.id)+'">查看源码</button>'+
     '<a class="btn sm" target="_blank" rel="noopener noreferrer" href="'+htmlUrl(a.id)+'">预览网页 ↗</a>'+
     '<button class="btn sm" data-pkg="source" data-id="'+esc(a.id)+'">下载 HTML</button>'+
     '<button class="btn sm green" data-pkg="download" data-id="'+esc(a.id)+'">打包下载 ZIP</button>'+
