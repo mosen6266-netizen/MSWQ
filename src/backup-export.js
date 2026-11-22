@@ -180,9 +180,10 @@ async function mswqFullBackupResponse(env){
  const sourceRepo=/^[\w.-]+\/[\w.-]+$/.test(String(env.MSWQ_BACKUP_GITHUB_REPO||''))
   ?String(env.MSWQ_BACKUP_GITHUB_REPO):'mosen6266-netizen/MSWQ';
  // Bundle the exact deployed source files, avoiding an outbound GitHub request.
- // This is updated on every release by scripts/build-mswq.mjs.
- if(typeof MSWQ_BACKUP_SOURCE_EXTRAS==='undefined')throw Error('完整源码快照未嵌入，本次备份已取消');
- const sourceFiles={...MSWQ_BACKUP_SOURCE_EXTRAS};
+ // The complete source snapshot is updated in private R2 on every release.
+ const sourceSnapshot=await env.FILES.get('mswq-private/source-snapshot-v1.json');
+ if(!sourceSnapshot)throw Error('完整源码快照尚未上传，本次备份已取消');
+ const sourceFiles=JSON.parse(await sourceSnapshot.text());
  const assetPaths={
   html:'public/index.html',js:'public/app.js',css:'public/app.css',
   personalSwitch:'public/personal-switch.js',bridge:'public/legacy-bridge.js',
