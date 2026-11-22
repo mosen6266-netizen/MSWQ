@@ -264,3 +264,23 @@ body:has(.public-docx-workspace){height:100vh;height:100dvh;overflow:hidden}
 .ip-allow-row>code{font:13px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;flex:1;min-width:180px}
 .ip-allow-row .btn{margin-left:auto}
 .ip-allow-count{color:#aab1ad;background:#34393a;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;font-size:11px}
+
+
+/* Content manager: drag a tool into a named child section, without opening its editor. */
+.library-group-help{margin:0;padding:10px 17px 0;color:#a8cbb7;font-size:12px}
+.library-subgroup-zone{margin:12px 15px 17px;border:1px solid #46504b;border-radius:12px;background:#1c211f;min-height:100px;overflow:hidden;transition:background-color .14s,border-color .14s,box-shadow .14s}
+.library-subgroup-title{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;background:#29302c;border-bottom:1px solid #39433e}
+.library-subgroup-title>div{display:flex;gap:9px;align-items:center;flex-wrap:wrap;min-width:0}
+.library-subgroup-title strong{color:#e9f4ee;font-size:13px}
+.library-subgroup-folder{font-size:19px;line-height:1;color:#77c59b}
+.library-subgroup-number{border:1px solid #59645d;border-radius:20px;padding:2px 8px;color:#b9c5be;font-size:11px}
+.library-subgroup-hint{color:#92afa0;font-size:11px}
+.library-subgroup-zone .library-table{background:transparent}
+.library-subgroup-empty{min-height:86px;display:flex;align-items:center;justify-content:center;padding:18px;text-align:center;color:#83988c;font-size:12px;border:1px dashed #4e6858;margin:12px;border-radius:9px}
+.library-is-dragging .library-subgroup-zone{border-style:dashed}
+.library-subgroup-zone.library-zone-drop-target{background:#173326;border-color:#70d59d;box-shadow:inset 0 0 0 2px #4cbd7b55,0 0 0 2px #61c88933}
+.library-subgroup-zone.library-zone-drop-target .library-subgroup-title{background:#234933}
+.library-subgroup-zone.library-zone-drop-target .library-subgroup-empty{color:#bff2d5;border-color:#72d79b}
+.library-is-dragging .library-subgroup-zone .library-subgroup-hint{font-weight:750;color:#91deb1}
+.library-subgroup-zone .library-table-wrap{width:100%}
+@media(max-width:750px){.library-subgroup-zone{margin:9px}.library-subgroup-title{align-items:flex-start}.library-subgroup-hint{width:100%}}
