@@ -187,10 +187,44 @@ def deploy(project,account,res,repo):
     command(["npx","--yes","wrangler","deploy","--config","wrangler.jsonc"],project,env)
     return html_url,"https://mswq."+html_url.split("mswq-html.",1)[1]
 
+def push_source_to_github(project,repo):
+    """Commit non-secret application source to the new GitHub repository."""
+    token=os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("GitHub source push deferred: have the new GPT use its connected GitHub app to commit the extracted project sources.")
+        return False
+    root="https://api.github.com/repos/"+repo+"/contents/"
+    excluded={".env",".dev.vars","wrangler.jsonc","wrangler.html-host.jsonc"}
+    count=0
+    for path in sorted(project.rglob("*")):
+        if not path.is_file():continue
+        rel=path.relative_to(project).as_posix()
+        if any(part in (".git","node_modules","dist",".wrangler") for part in path.relative_to(project).parts):
+            continue
+        if path.name in excluded or path.name.endswith(".zip") or path.name.endswith(".bak"):
+            continue
+        blob=path.read_bytes()
+        if len(blob)>1000000:raise RuntimeError("GitHub source file too large: "+rel)
+        url=root+urllib.parse.quote(rel,safe="/")
+        current=None
+        try:
+            current=request_json(url,token)
+        except urllib.error.HTTPError as e:
+            if e.code!=404:raise
+        data={"message":"Restore MSWQ source: "+rel,
+              "content":base64.b64encode(blob).decode("ascii"),"branch":"main"}
+        if current and current.get("sha"):data["sha"]=current["sha"]
+        request_json(url,token,"PUT",data)
+        count+=1
+    print("Restored",count,"source files to",repo)
+    return True
+
+
 def main():
     parser=argparse.ArgumentParser(description="Recreate MSWQ in a NEW Cloudflare account from a single GitHub Release ZIP.")
     parser.add_argument("--repo",required=True,help="New GitHub repository, OWNER/REPO")
     parser.add_argument("--tag",default="mswq-migration",help="GitHub Release tag")
+    parser.add_argument("--local-zip",help="Use a previously downloaded Release ZIP rather than downloading it again")
     parser.add_argument("--execute",action="store_true",help="Explicitly create Cloudflare resources and deploy")
     args=parser.parse_args()
     if args.repo.count("/")!=1:parser.error("Repository must be OWNER/REPO")
@@ -205,7 +239,18 @@ def main():
     if not account:raise RuntimeError("Missing CLOUDFLARE_ACCOUNT_ID")
     with tempfile.TemporaryDirectory(prefix="mswq-rebuild-") as work:
         directory=Path(work)
-        archive,manifest,release,asset=release_zip(args.repo,args.tag,directory)
+        if args.local_zip:
+            archive=Path(args.local_zip).expanduser().resolve()
+            if not archive.is_file():raise RuntimeError("Local ZIP does not exist")
+            with zipfile.ZipFile(archive) as z:
+                bad=z.testzip()
+                if bad:raise RuntimeError("ZIP CRC check failed: "+bad)
+                manifest=json.loads(z.read("manifest.json"))
+                if manifest.get("format")!="mswq-full-migration-v1":raise RuntimeError("Invalid manifest")
+            release={"html_url":"GitHub Release: "+args.repo+" / "+args.tag}
+            asset={"id":None,"name":archive.name}
+        else:
+            archive,manifest,release,asset=release_zip(args.repo,args.tag,directory)
         project=directory/"project"
         with zipfile.ZipFile(archive) as z:
             with zipfile.ZipFile(z.open("sources/MSWQ-github.zip")) as sources:
@@ -216,10 +261,12 @@ def main():
         print("New resources created:",json.dumps(resource))
         counts=restore_archive(project,archive,account,resource)
         html_url,main_url=deploy(project,account,resource,args.repo)
+        pushed=push_source_to_github(project,args.repo)
         print(json.dumps({
           "status":"RESTORED_AND_DEPLOYED_NOT_YET_BROWSER_VERIFIED",
           "mainUrl":main_url,"htmlToolsUrl":html_url,
           "restoredCounts":counts,
+          "sourcePushedToGitHub":pushed,
           "releaseAssetId":asset["id"],
           "releaseUrl":release.get("html_url"),
           "next":"Set NEW admin password and TOTP secrets (via Wrangler or Cloudflare connector), run end-to-end browser tests, THEN delete GitHub Release backup asset."
