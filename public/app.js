@@ -91,17 +91,35 @@ function homeRender(){
  const c=S.settings||{},types=[...orderedCategoryIds(c).filter(k=>!((c.hidden_types||[]).includes(k))),'all'];
  if(!types.includes(S.filter))S.filter=types[0]||'all';
  const matching=text=>String(text||'').toLowerCase().includes(S.search.toLowerCase());
- const items=S.items.filter(x=>(S.filter==='all'||frontTabForItem(x)===S.filter)&&matching([x.title,x.description,x.category,(x.tags||[]).join(' ')].join(' ')));
+ const items=S.items.filter(x=>(S.filter==='all'||frontTabForItem(x)===S.filter)&&matching([x.title,x.description,x.category,subgroupTitle(x.subgroupId,c),(x.tags||[]).join(' ')].join(' ')));
  const isBookmarkTab=S.filter==='bookmarks';
  const bookmarkRows=isBookmarkTab?S.bookmarkEntries.filter(x=>matching([x.title,x.note,x.url,x.collectionTitle].join(' '))):[];
  const busy=isBookmarkTab&&!S.bookmarksLoaded&&!S.bookmarksError;
  const count=isBookmarkTab?(S.bookmarksLoaded?bookmarkRows.length+items.filter(x=>['document','html'].includes(x.kind)).length:'…'):items.length;
- const cards=(isBookmarkTab?items.filter(x=>['document','html'].includes(x.kind)):items).map(x=>{
+ const cardFor=x=>{
   const direct=x.direct_url&&absoluteHttpUrl(x.direct_url)?x.direct_url:'';
   const destination=direct?direct:itemHref(x);
   const tabAttrs=direct?' target="_blank" rel="noopener noreferrer"':'';
   return '<a class="tile" href="'+esc(destination)+'"'+tabAttrs+'><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(x.kind==='html'?'HTML 文件':typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(direct?'打开完整页面 ↗':x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>';
- }).join('');
+ };
+ const cards=(isBookmarkTab?items.filter(x=>['document','html'].includes(x.kind)):items).map(cardFor).join('');
+ const layoutClass=(c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'';
+ const cardGrid=rows=>'<div class="grid '+esc(layoutClass)+'">'+rows.map(cardFor).join('')+'</div>';
+ const groupCategory=(rows,category,withMainTitle=false)=>{
+  if(!rows.length)return '';
+  const groups=subgroupsFor(category,c),known=new Set(groups.map(g=>g.id));
+  const mainTitle=withMainTitle?'<div class="front-category-title"><h2>'+esc(typeNames[category]||category)+'</h2><span>'+rows.length+' 项</span></div>':'';
+  if(!groups.length)return '<section class="front-category-section">'+mainTitle+cardGrid(rows)+'</section>';
+  const parts=groups.map(g=>{
+   const members=rows.filter(x=>x.subgroupId===g.id);
+   if(!members.length)return '';
+   return '<section class="front-subgroup"><div class="front-subgroup-head"><h3>'+esc(g.name)+'</h3><span>'+members.length+' 项</span></div>'+cardGrid(members)+'</section>';
+  }).join('');
+  const other=rows.filter(x=>!known.has(x.subgroupId));
+  return '<section class="front-category-section">'+mainTitle+parts+
+   (other.length?'<section class="front-subgroup"><div class="front-subgroup-head"><h3>其他内容</h3><span>'+other.length+' 项</span></div>'+cardGrid(other)+'</section>':'')+'</section>';
+ };
+
  let content;
  if(isBookmarkTab){
   content=S.bookmarksError?'<div class="empty">网址收藏加载失败：'+esc(S.bookmarksError)+' <button class="btn sm" data-action="retry-bookmarks">重试</button></div>':
@@ -111,7 +129,12 @@ function homeRender(){
     (items.some(x=>['document','html'].includes(x.kind))?'<div class="grid bookmark-docx-grid">'+cards+'</div>':''):
    '<div class="empty">'+(S.search?'没有匹配的收藏网址或文档':'尚未发布收藏网址或文档入口')+'</div>';
  }else{
-  content=items.length?'<div class="grid '+esc((c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'')+'">'+cards+'</div>':'<div class="empty">暂无匹配的已发布内容</div>';
+  if(!items.length)content='<div class="empty">暂无匹配的已发布内容</div>';
+  else if(!(c.subgroups||[]).length)content=cardGrid(items);
+  else if(S.filter==='all'){
+   const cats=[...new Set([...orderedCategoryIds(c),...items.map(frontTabForItem)])].filter(cat=>items.some(x=>frontTabForItem(x)===cat));
+   content=cats.map(cat=>groupCategory(items.filter(x=>frontTabForItem(x)===cat),cat,true)).join('');
+  }else content=groupCategory(items,S.filter,false);
  }
  root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="'+(isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…')+'" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':esc(typeNames[t]))+'</button>').join('')+'<span class="muted small" style="margin-left:auto">'+count+' 个'+(isBookmarkTab?'网址':'内容')+'</span></div>'+content+'</main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
