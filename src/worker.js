@@ -83,7 +83,7 @@ async function googleTotpValid(base32,code){
  return false;
 }
 async function sessionValid(req,env){
- if(!env.ADMIN_PASSWORD||!env.ADMIN_TOTP_SECRET||!env.SESSION_SECRET)return false;
+ if(!env.ADMIN_PASSWORD||!env.ADMIN_TOTP_SECRET)return false;
  const token=(req.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('mswq_session='));
  if(!token)return false;
  const pieces=token.slice(13).split('.');
@@ -647,7 +647,7 @@ async function handler(req,env){
  if(method==='POST'&&p==='/api/admin/login'){
   if(MSWQ_TEST_OPEN_ADMIN)return out({ok:true,testMode:true});
   if(!checkOrigin(req))return fail('请求来源不合法',403);
-  if(!env.ADMIN_PASSWORD||!env.ADMIN_TOTP_SECRET||!env.SESSION_SECRET)return fail('管理员双重验证配置未就绪，请联系管理员',503);
+  if(!env.ADMIN_PASSWORD||!env.ADMIN_TOTP_SECRET)return fail('管理员双重验证配置未就绪，请联系管理员',503);
   const ip=req.headers.get('cf-connecting-ip')||'unknown';
   const ipHash=base64url(await digest('mswq-'+ip));
   let row=await env.DB.prepare('SELECT * FROM login_attempts WHERE ip=?').bind(ipHash).first();
