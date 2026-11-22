@@ -82,6 +82,7 @@ function normalizeItem(incoming,id){
  const blocks=Array.isArray(content.blocks)?content.blocks.slice(0,600):[];
  const members=Array.isArray(content.members)?content.members.slice(0,150):[];
  const normalized={...content,blocks,members};
+ normalized.subgroupId=/^[a-f0-9-]{36}$/i.test(String(content.subgroupId||''))?String(content.subgroupId):'';
  const safeId=value=>/^[a-f0-9-]{32,40}$/i.test(String(value||''))?String(value):crypto.randomUUID();
  const safeAsset=value=>/^[a-f0-9-]{32,40}$/i.test(String(value||''))?String(value):'';
  if(kind==='bookmarks'){
@@ -206,6 +207,7 @@ function record(r,includeContent=true){
  if(!r)return null;
  const z={id:r.id,kind:r.kind,status:r.status,title:r.title,slug:r.slug,description:r.description,category:r.category,tags:JSON.parse(r.tags||'[]'),sort_order:r.sort_order,thumbnail:r.thumbnail,created_at:r.created_at,updated_at:r.updated_at,version:r.version};
  const data=JSON.parse(r.content||'{}');
+ z.subgroupId=/^[a-f0-9-]{36}$/i.test(String(data.subgroupId||''))?String(data.subgroupId):'';
  if(includeContent)z.content=data;
  if(r.kind==='html')z.direct_url=htmlAssetLink(data.htmlAssetId);
  else if(!includeContent&&data.openStandalone===true&&typeof data.standaloneUrl==='string'&&allowedUrl(data.standaloneUrl))z.direct_url=data.standaloneUrl;
@@ -213,7 +215,7 @@ function record(r,includeContent=true){
 }
 async function config(env){
  const rows=await env.DB.prepare('SELECT key,value FROM settings').all();
- const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[],hidden_types:[],type_labels:{},deleted_types:[],type_order:[]};
+ const out={brand:'MSWQ',headline:'内容与工具中心',description:'选择你需要查看的流程、剧本或文档',layout:'grid',footer:'',announcement:'',docx_url:'/docx',custom_types:[],hidden_types:[],type_labels:{},deleted_types:[],type_order:[],subgroups:[]};
  for(const {key,value} of rows.results||[]){
   if(key==='custom_types'){
    try{
@@ -224,6 +226,11 @@ async function config(env){
    try{
     const parsed=JSON.parse(value);
     if(Array.isArray(parsed))out[key]=[...new Set(parsed.filter(x=>typeof x==='string'&&(/^(?:personal|group|document|page|link|bookmarks|profile)$/.test(x)||/^custom_[a-f0-9]{32}$/.test(x))))].slice(0,150);
+   }catch{}
+  }else if(key==='subgroups'){
+   try{
+    const parsed=JSON.parse(value);
+    if(Array.isArray(parsed))out.subgroups=parsed.slice(0,200).filter(x=>x&&/^[a-f0-9-]{36}$/i.test(x.id)&&typeof x.category==='string'&&typeof x.name==='string').map(x=>({id:x.id,category:x.category,name:cleanString(x.name,40)}));
    }catch{}
   }else if(key==='type_labels'){
    try{
@@ -667,6 +674,19 @@ async function handler(req,env){
    if(key==='docx_url'&&val&&!allowedUrl(val)&&!val.startsWith('/docx'))return fail('文档工具网址必须是 /docx 或 HTTPS/HTTP 地址');
    await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key,val).run();
   }
+  if(body.subgroups!==undefined){
+   if(!Array.isArray(body.subgroups)||body.subgroups.length>200)return fail('子分组数据无效或超过 200 个',400);
+   const cfg=await config(env),valid=new Set([...Object.keys(CORE_TYPE_LABELS),'html',...(cfg.custom_types||[]).map(x=>x.id)]);
+   const usedId=new Set(),usedName=new Set(),outGroups=[];
+   for(const x of body.subgroups){
+    const id=String(x?.id||''),category=String(x?.category||''),name=cleanString(x?.name||'',40).trim();
+    if(!/^[a-f0-9-]{36}$/i.test(id)||!valid.has(category)||!name||/[<>\u0000-\u001f]/.test(name))return fail('子分组 ID、名称或父级分类无效',400);
+    const code=category+'\0'+name.toLocaleLowerCase();
+    if(usedId.has(id)||usedName.has(code))return fail('子分组不能重复',400);
+    usedId.add(id);usedName.add(code);outGroups.push({id,category,name});
+   }
+   await env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('subgroups',JSON.stringify(outGroups)).run();
+  }
   return out({ok:true,settings:await config(env)});
  }
  if(method==='GET'&&p==='/api/admin/revisions'){
@@ -830,8 +850,8 @@ async function handler(req,env){
   const row=await env.DB.prepare('SELECT * FROM assets WHERE id=?').bind(id).first();
   if(!row)return fail('资源不存在',404);
   // Avoid deleting referenced assets: content holds opaque asset IDs.
-  const ref=await env.DB.prepare('SELECT id FROM items WHERE content LIKE ? LIMIT 1').bind('%'+id+'%').first();
-  if(ref)return fail('有内容仍在使用此文件，请先移除引用',409);
+  const ref=await env.DB.prepare('SELECT id FROM items WHERE content LIKE ? OR thumbnail LIKE ? LIMIT 1').bind('%'+id+'%','%/api/asset/'+id+'%').first();
+  if(ref)return fail('有内容或卡片封面正在使用此文件，请先取消关联',409);
   const bundle=await htmlPackageManifest(env,id);
   if(bundle){
    let cursor;
