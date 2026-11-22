@@ -72,10 +72,10 @@ function field(name,value,prop,placeholder='',kind='input'){
 }
 function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" data-mswq-back="true" aria-label="返回">返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
 function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
-async function showHome(){
+async function showHome(reuseLoaded=false){
  document.title='MSWQ · 内容与工具中心';S.preview=false;
  root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
- try{const x=await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);const visibleTypes=orderedCategoryIds(S.settings).filter(k=>!(S.settings.hidden_types||[]).includes(k));const remembered=history.state?.mswqHomeFilter;S.filter=(remembered==='all'||visibleTypes.includes(remembered))?remembered:(visibleTypes[0]||'all');if(S.filter==='bookmarks'){try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}}homeRender();}
+ try{const x=(reuseLoaded&&Array.isArray(S.items)&&S.settings)?{items:S.items,settings:S.settings}:await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);const visibleTypes=orderedCategoryIds(S.settings).filter(k=>!(S.settings.hidden_types||[]).includes(k));const remembered=history.state?.mswqHomeFilter;S.filter=(remembered==='all'||visibleTypes.includes(remembered))?remembered:(visibleTypes[0]||'all');if(S.filter==='bookmarks'){try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}}homeRender();}
  catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
 }
 async function loadPublicBookmarks(){
@@ -243,17 +243,18 @@ function openMediaPreview(id,kind,label){
  wrap.querySelector('[data-action="close-media-preview"]')?.focus();
 }
 
-async function showReader(slugText,localItem=null){
+async function showReader(slugText,localItem=null,preloadedItem=null){
  root.innerHTML='<div class="loading center" style="padding:100px">正在打开内容…</div>';
  try{
  // DOCX template-specific share links are a virtual workspace, not D1 items.
  // A /view/docx-workspace?template=<id> link must work without an additional
  // "publish content" step in the MSWQ content dashboard.
- let item=localItem;
+ let item=preloadedItem||localItem;
  if(!item&&slugText==='docx-workspace'){
   const id=new URLSearchParams(location.search).get('template')||'';
   if(id&&!/^[a-f0-9-]{16,60}$/i.test(id))throw Error('DOCX 模板链接中的编号无效');
-  const catalog=await api('/api/docx/templates');
+  const [catalog,siteSettings]=await Promise.all([api('/api/docx/templates'),S.settings?Promise.resolve(null):api('/api/public')]);
+  if(siteSettings){S.settings=siteSettings.settings;applyCustomTypes(S.settings);}
   const templates=Array.isArray(catalog.templates)?catalog.templates:[];
   const selected=id?templates.find(t=>t.id===id):templates[0];
   if(id&&!selected)throw Error('此 DOCX 模板已不存在或暂不可访问，请向管理员确认链接');
@@ -262,7 +263,12 @@ async function showReader(slugText,localItem=null){
    status:'published',slug:'docx-workspace',
    content:{docUrl:'/docx',templateId:selected.id},description:'DOCX 模板直达'};
  }
- if(!item)item=(await api('/api/public/item/'+encodeURIComponent(slugText))).item;
+ if(!item){
+  if(!S.settings){
+   const [one,site]=await Promise.all([api('/api/public/item/'+encodeURIComponent(slugText)),api('/api/public')]);
+   item=one.item;S.settings=site.settings;applyCustomTypes(S.settings);
+  }else item=(await api('/api/public/item/'+encodeURIComponent(slugText))).item;
+ }
  S.viewer=item;S.preview=!!localItem;
  if(!S.settings){const pub=await api('/api/public');S.settings=pub.settings;applyCustomTypes(S.settings);}
  document.title=item.title+' · MSWQ';
@@ -1236,8 +1242,43 @@ async function importJSON(){
 function openModal(content){closeModal();const wrap=document.createElement('div');wrap.id='currentModal';wrap.className='modal-backdrop';wrap.innerHTML='<div class="modal" role="dialog" aria-modal="true">'+content+'</div>';document.body.appendChild(wrap)}
 function closeModal(){$('#currentModal')?.remove()}
 function download(name,content,type){const u=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+// DOCX cards on the homepage open inside the existing MSWQ shell.
+// This avoids downloading/parsing the app and waiting for the same data again.
+window.addEventListener('popstate',()=>{
+ if(S.admin)return;
+ if(location.pathname==='/'&&!location.search){showHome(true);return;}
+ if(location.pathname.startsWith('/view/')){
+  const slug=decodeURIComponent(location.pathname.slice(6));
+  const item=(S.items||[]).find(x=>x.kind==='document'&&x.slug===slug);
+  showReader(slug,null,item||null);return;
+ }
+ if((location.pathname==='/docx'||location.pathname==='/docx/')&&
+   /^[a-f0-9-]{16,60}$/i.test(new URLSearchParams(location.search).get('template')||'')){
+  showReader('docx-workspace');
+ }
+});
 document.addEventListener('click',async e=>{
+ if(!e.defaultPrevented&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey&&
+    !S.admin&&location.pathname==='/'&&!location.search){
+  const anchor=e.target.closest('a.tile[href]');
+  if(anchor&&!anchor.hasAttribute('download')&&!anchor.hasAttribute('target')){
+   const dest=new URL(anchor.href,location.origin);
+   const item=(S.items||[]).find(x=>x.kind==='document'&&itemHref(x)===dest.pathname);
+   if(item&&dest.origin===location.origin){
+    e.preventDefault();
+    history.pushState({mswqFastDocx:true},'',dest.pathname+dest.search);
+    showReader(item.slug,null,item);
+    return;
+   }
+  }
+ }
  const back=e.target.closest('a[data-mswq-back="true"]');
+ if(back&&history.state?.mswqFastDocx&&!e.defaultPrevented&&e.button===0&&
+    !e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
+  e.preventDefault();
+  history.back();
+  return;
+ }
  if(back&&!e.defaultPrevented&&e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
   if(document.referrer){
    if(history.length>1){e.preventDefault();history.back();return;}
