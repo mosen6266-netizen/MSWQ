@@ -1,0 +1,27 @@
+name: Validate MSWQ migration source
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python syntax
+        run: python -m py_compile scripts/restore-mswq.py scripts/rebuild-from-release.py scripts/cleanup-github-release.py
+      - name: Build exact MSWQ worker
+        run: |
+          node --check scripts/build-mswq.mjs
+          node scripts/build-mswq.mjs
+          node --check dist/mswq-worker.mjs
+      - name: Verify archive exporter source
+        run: node --check src/backup-export.js
