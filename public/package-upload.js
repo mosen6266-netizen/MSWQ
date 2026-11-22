@@ -145,5 +145,5 @@ async function upload(files,entry,name,replaceId,originalZip,onProgress){
  onProgress?.('工具包上传完成');
  return result;
 }
-window.MSWQPackage={fromZip,fromFolder,entryOptions,warnings,upload};
+window.MSWQPackage={fromZip,fromFolder,entryOptions,warnings,upload,zipFiles:storeZip};
 })();
