@@ -209,6 +209,9 @@ function record(r,includeContent=true){
  const data=JSON.parse(r.content||'{}');
  z.subgroupId=/^[a-f0-9-]{36}$/i.test(String(data.subgroupId||''))?String(data.subgroupId):'';
  if(includeContent)z.content=data;
+ // Already published, lightweight interactive pages: include their public data
+ // in the homepage response to avoid another round trip before opening them.
+ else if(['profile','bookmarks','document','link'].includes(r.kind))z.content=data;
  if(r.kind==='html')z.direct_url=htmlAssetLink(data.htmlAssetId);
  else if(!includeContent&&data.openStandalone===true&&typeof data.standaloneUrl==='string'&&allowedUrl(data.standaloneUrl))z.direct_url=data.standaloneUrl;
  return z;
@@ -551,8 +554,11 @@ async function handler(req,env){
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
-  const row=await env.DB.prepare("SELECT * FROM items WHERE slug=? AND status='published'").bind(slug).first();
-  return row?out({ok:true,item:resolvedItemSubgroup(record(row),await config(env))}):fail('页面不存在或尚未发布',404);
+  const [row,settings]=await Promise.all([
+   env.DB.prepare("SELECT * FROM items WHERE slug=? AND status='published'").bind(slug).first(),
+   config(env)
+  ]);
+  return row?out({ok:true,item:resolvedItemSubgroup(record(row),settings)}):fail('页面不存在或尚未发布',404);
  }
  if(['GET','HEAD'].includes(method)&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop(),req);
  if(['GET','HEAD'].includes(method)&&p.startsWith('/api/icon/'))return iconFile(env,p.split('/').pop(),req);
