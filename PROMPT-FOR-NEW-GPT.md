@@ -15,7 +15,7 @@
 5. 允许你使用可用的云端电脑运行 Python 3.10+、Node.js 20+ 和 Wrangler。可使用 scripts/rebuild-from-release.py --repo 新用户名/仓库名 --local-zip 已下载ZIP --execute。该脚本包含自动创建资源、导入、编译、部署、GitHub 源码提交、生成新管理员验证密钥的流程。若云端电脑无法得到连接器的凭据，先通过已连接的 Cloudflare/GitHub 工具或授权浏览器完成相同的 API 操作，不要因此让用户手动向 Cloudflare 上传文件。
 6. 所有密码、Google Authenticator TOTP 密钥、SESSION_SECRET、GitHub/Cloudflare API Token 在新账号**重新生成**。不得读取、带走或复用旧账号的密钥。后台必须继续要求管理员密码 + Google Authenticator 六位验证码。使用安全的授权/密钥注入方式，不能把秘密保存进 GitHub 文件。
 7. 逐项比对 manifest.json 与恢复端实际数量、总字节及元数据；检查原版个人流程、群剧本、名片、收藏、DOCX 编辑/保存/导出、HTML 工具与相对图片路径、图标、素材库、分类和排序、后台增删改发布、IP 白名单、跳转与返回键、移动端展示、双重验证。不要凭部署成功就认定功能全部正常，必须通过实际浏览器/HTTP/数据库验证。检验新账号链接与旧账号的功能一致；因为 Workers 域名和资源 ID 属于新账号，地址可不同。
-8. 全部验收成功后，按我的授权**删除新 GitHub Releases 中作为临时迁移文件上传的 MSWQ-complete-*.zip 附件**（必要时清理仅用于迁移的 Release），保留新 GitHub 中的源码和新 Cloudflare 的正式数据库、文件及服务。Release 附件没有进入 git commit 历史时，不需要为了删除该附件重写正常源码历史。删除前必须确认备份已完整恢复；如果有任何失败，保留备份并报告。
+8. 全部验收成功后，按我的授权**删除新 GitHub Releases 中作为临时迁移文件上传的 MSWQ-complete-*.zip 附件（优先调用 GitHub Release 删除附件接口，或在授权云电脑运行 scripts/cleanup-github-release.py --repo 新用户名/仓库名 --verified；若 GitHub 连接器缺乏删除能力，可在 Work 浏览器中删除）**（必要时清理仅用于迁移的 Release），保留新 GitHub 中的源码和新 Cloudflare 的正式数据库、文件及服务。Release 附件没有进入 git commit 历史时，不需要为了删除该附件重写正常源码历史。删除前必须确认备份已完整恢复；如果有任何失败，保留备份并报告。
 9. 把最终新首页地址、后台地址、HTML 工具域名、GitHub 仓库、资源数量核对结果、管理员新密码/Google Authenticator 绑定方法、是否删除临时 GitHub 附件逐项向我报告。旧 MSWQ 始终保持运行，除非我明确要求切换。
 
 ## 硬性要求
