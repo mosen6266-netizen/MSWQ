@@ -1073,6 +1073,36 @@ case 'retry-bookmarks':{
  case 'delete-asset':
   if(!confirm('确认删除这个文件？'))return;
   await api('/api/admin/assets/'+id,{method:'DELETE'});await loadAssets();adminRender();toast('文件已删除');break;
+ case 'copy-icon-url':await navigator.clipboard.writeText(location.origin+icon(id));toast('独立图标链接已复制');break;
+ case 'delete-icon':
+  if(!confirm('确认删除这张独立图标？「文件素材」中的任何图片都不会受影响。'))break;
+  await api('/api/admin/icons/'+encodeURIComponent(id),{method:'DELETE'});
+  await loadIcons();adminRender();toast('仅从独立图标库删除');break;
+ case 'open-icon-import':{
+  await loadAssets();const imgs=S.assets.filter(a=>a.mime?.startsWith('image/'));
+  openModal('<h2>从文件素材复制到图标库</h2><p class="muted small">选中的图片会独立复制一份，两个库删除操作互不影响。</p>'+
+   (imgs.length?'<div class="icon-picker-grid">'+imgs.map(a=>'<button class="icon-picker-item" data-action="import-icon" data-id="'+a.id+'"><img src="'+asset(a.id)+'" loading="lazy" alt=""><span>'+esc(a.name)+'</span></button>').join('')+'</div>':'<div class="empty">文件素材中没有图片。</div>')+
+   '<div class="flex end" style="margin-top:10px"><button class="btn" data-action="close-modal">取消</button></div>');break;
+ }
+ case 'import-icon':
+  el.disabled=true;
+  try{
+   await api('/api/admin/icons/import',{method:'POST',...jsonBody({assetId:id})});
+   closeModal();await loadIcons();adminRender();toast('已复制到独立图标库，原文件素材未修改');
+  }finally{el.disabled=false;}
+  break;
+ case 'allow-my-ip':
+  if(S.ipAccess.currentIp)await saveAllowedIps([...(S.ipAccess.ips||[]),S.ipAccess.currentIp]);
+  break;
+ case 'allow-ip':{
+  const ip=$('#allowedIpEntry')?.value?.trim();
+  if(!ip)return toast('请输入允许的 IP');
+  if((S.ipAccess.ips||[]).includes(ip))return toast('该 IP 已在白名单中');
+  await saveAllowedIps([...(S.ipAccess.ips||[]),ip]);break;
+ }
+ case 'remove-ip':
+  if(!confirm('确认移除 '+id+'？该 IP 将立即失去前端访问权限。'))break;
+  await saveAllowedIps((S.ipAccess.ips||[]).filter(ip=>ip!==id));break;
  case 'upload-assets':await uploadAssets();break;
  case 'upload-icons':await uploadIcons();break;
  case 'save-settings':{
@@ -1133,10 +1163,14 @@ async function uploadIcons(){
  for(const f of files){
   const mime=allowed[f.name.split('.').pop().toLowerCase()];
   if(!mime||f.size>12000000||!f.size){toast('跳过不支持或超过12MB的图片：'+f.name);continue}
-  await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(f.name)},body:await f.arrayBuffer()});
+  await api('/api/admin/icons',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(f.name)},body:await f.arrayBuffer()});
   count++;
  }
- await loadAssets();adminRender();toast('成功上传 '+count+' 张图片');
+ await loadIcons();adminRender();toast('图标库新增 '+count+' 张图片，文件素材未改变');
+}
+async function saveAllowedIps(ips){
+ const next=await api('/api/admin/ip-access',{method:'PUT',...jsonBody({ips})});
+ S.ipAccess=next;adminRender();toast('IP 白名单已生效');
 }
 async function uploadAssets(){
  const input=$('#assetUpload'),files=[...(input?.files||[])];
@@ -1283,8 +1317,8 @@ document.addEventListener('change',async e=>{
   if(!mime||!file.size||file.size>12000000)return toast('封面只支持 PNG、JPG、WebP、GIF，最大12MB');
   t.disabled=true;
   try{
-   const res=await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
-   S.edit.thumbnail=asset(res.asset.id);await loadAssets();adminRender();toast('图片已上传并选用，请保存内容');
+   const res=await api('/api/admin/icons',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+   S.edit.thumbnail=icon(res.icon.id);await loadIcons();adminRender();toast('已上传到独立图标库，请保存内容');
   }catch(err){t.disabled=false;toast('封面上传失败：'+err.message)}
   return;
  }
