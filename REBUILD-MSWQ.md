@@ -32,7 +32,7 @@
 4. 从 wrangler.main.example.jsonc 填写所有新资源 ID、桶名和新 GitHub 仓库名，保存为 wrangler.jsonc；从 wrangler.html-host.example.jsonc 填写新桶名，保存为 wrangler.html-host.jsonc。
 5. 恢复全部数据库、KV、R2；**必须保留 R2 customMetadata**，否则原版流程发布签名可能失效。
 6. 部署两个 Worker：mswq 和隔离 HTML 主机 mswq-html。旧源码内 HTML_VIEW_ORIGIN 必须指向新 mswq-html Worker 的真实 URL。
-7. 在新 Cloudflare 创建新的 ADMIN_PASSWORD 和 ADMIN_TOTP_SECRET 两个 Secret；推荐另设置 SESSION_SECRET。不要把密钥放到 GitHub 或备份 ZIP。
+7. 每次修改 GitHub 源码并重新部署时，都必须重新运行 build-mswq.mjs 并上传 dist/mswq-source-snapshot.json 到私有 R2；普通的后台内容变化不需要这个步骤。之后在新 Cloudflare 创建新的 ADMIN_PASSWORD 和 ADMIN_TOTP_SECRET 两个 Secret；推荐另设置 SESSION_SECRET。不要把密钥放到 GitHub 或备份 ZIP。
 8. 如需同一自定义域名，重新绑定域名/DNS；检查网站 IP 白名单（它被恢复为旧站原名单，新登录地点可能被拒绝）。
 9. 逐项验收后台双重验证、所有已发布/草稿个人流程、群剧本、名片、收藏、HTML 工具、DOCX 模板、历史版本、原版 HTML、图片视频、图标、分类、提示按钮、完整导入导出、返回键及流程切换。
 10. **验收前保持旧系统运行**，确认完整后再切换域名访问。
@@ -51,6 +51,8 @@ python -m pip install boto3
 ~~~bash
 export MSWQ_HTML_ORIGIN="https://mswq-html.<NEW_SUBDOMAIN>.workers.dev"
 node scripts/build-mswq.mjs
+# 上传完整源码快照（私有 R2），确保以后每次备份都能脱离 GitHub 在线访问
+npx wrangler r2 object put NEW_R2_BUCKET_NAME/mswq-private/source-snapshot-v1.json --file ./dist/mswq-source-snapshot.json --remote
 npx wrangler deploy -c wrangler.html-host.jsonc
 npx wrangler deploy -c wrangler.jsonc
 ~~~
