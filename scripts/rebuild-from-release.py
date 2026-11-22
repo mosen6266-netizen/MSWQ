@@ -147,8 +147,10 @@ def restore_archive(project,backup,account,res):
 def write_configs(project,account,res,repo):
     try:
         subdomain=cf(account,"/workers/subdomain")["subdomain"]
-    except Exception as exc:
-        raise RuntimeError("New Cloudflare Workers subdomain is not set; authorize creation before continuing") from exc
+    except Exception:
+        # A fresh account may not have a workers.dev subdomain yet.
+        subdomain="mswq-"+uuid.uuid4().hex[:12]
+        cf(account,"/workers/subdomain","PUT",{"subdomain":subdomain})
     html_url="https://mswq-html."+subdomain+".workers.dev"
     main=json.loads((project/"wrangler.main.example.jsonc").read_text(encoding="utf-8"))
     main["name"]="mswq"
@@ -220,6 +222,24 @@ def push_source_to_github(project,repo):
     return True
 
 
+def setup_new_admin_secrets(project):
+    """Provision fresh password/TOTP/session secrets; do NOT copy old credentials."""
+    password=secrets.token_urlsafe(24)
+    key=base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+    signing=secrets.token_urlsafe(48)
+    for name,value in (("ADMIN_PASSWORD",password),
+                       ("ADMIN_TOTP_SECRET",key),
+                       ("SESSION_SECRET",signing)):
+        command(["npx","--yes","wrangler","secret","put",name,
+                 "--config","wrangler.jsonc"],project,
+                input_text=value+"\n")
+    # Shown once in the console, not written to the source tree or GitHub.
+    print("NEW ADMIN PASSWORD (save securely):",password,flush=True)
+    print("NEW GOOGLE AUTHENTICATOR MANUAL KEY (Base32):",key,flush=True)
+    print("Use SHA1 / 6 digits / 30 seconds. Never publish these values.",flush=True)
+    return True
+
+
 def main():
     parser=argparse.ArgumentParser(description="Recreate MSWQ in a NEW Cloudflare account from a single GitHub Release ZIP.")
     parser.add_argument("--repo",required=True,help="New GitHub repository, OWNER/REPO")
@@ -261,6 +281,7 @@ def main():
         print("New resources created:",json.dumps(resource))
         counts=restore_archive(project,archive,account,resource)
         html_url,main_url=deploy(project,account,resource,args.repo)
+        setup_new_admin_secrets(project)
         pushed=push_source_to_github(project,args.repo)
         print(json.dumps({
           "status":"RESTORED_AND_DEPLOYED_NOT_YET_BROWSER_VERIFIED",
@@ -269,7 +290,7 @@ def main():
           "sourcePushedToGitHub":pushed,
           "releaseAssetId":asset["id"],
           "releaseUrl":release.get("html_url"),
-          "next":"Set NEW admin password and TOTP secrets (via Wrangler or Cloudflare connector), run end-to-end browser tests, THEN delete GitHub Release backup asset."
+          "next":"New admin password and TOTP were generated above. Bind Google Authenticator, run end-to-end browser tests, THEN delete the GitHub Release backup asset."
         },indent=2,ensure_ascii=False))
         # Backup deletion intentionally NOT automatic: don't destroy the only
         # working copy before login, DOCX and HTML end-to-end verification.
