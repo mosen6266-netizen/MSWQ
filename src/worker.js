@@ -370,8 +370,71 @@ function publicDocxPage(value){
  headers.set('content-security-policy',"default-src 'self' data: blob:; script-src 'unsafe-inline' 'self' blob:; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'");
  return new Response(value,{status:200,headers});
 }
+
+/* Separate icon library and enforced public-site IP allowlist.
+   Stored under dedicated keys in the existing R2 bucket, never in assets. */
+const ICON_PREFIX='mswq-icons/v1/';
+const IP_ACCESS_KEY='mswq-private/ip-allowlist-v1.json';
+const IP_UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+function normalizedClientIP(value){
+ const t=String(value||'').trim();
+ if(t.includes(':')){
+  if(!/^[0-9a-fA-F:.]+$/.test(t))return '';
+  try{
+   const host=new URL('http://['+t+']/').hostname;
+   return host.startsWith('[')&&host.endsWith(']')?host.slice(1,-1).toLowerCase():'';
+  }catch{return ''}
+ }
+ const parts=t.split('.');
+ if(parts.length!==4||parts.some(x=>!/(?:0|[1-9]\d{0,2})$/.test(x)||Number(x)>255))return '';
+ return parts.map(Number).join('.');
+}
+async function siteIpList(env){
+ const object=await env.FILES.get(IP_ACCESS_KEY);
+ if(!object)return {ips:[],updatedAt:''};
+ try{
+  const data=JSON.parse(await object.text());
+  if(!Array.isArray(data.ips))return {ips:[],updatedAt:''};
+  return {ips:[...new Set(data.ips.map(normalizedClientIP).filter(Boolean))].slice(0,300),updatedAt:String(data.updatedAt||'')};
+ }catch{return {ips:[],updatedAt:''}}
+}
+function protectedPublicPath(path){
+ return path==='/'||path.startsWith('/view/')||path==='/docx'||path==='/docx/'||
+  path==='/api/public'||path.startsWith('/api/public/')||path.startsWith('/api/docx/')||
+  path.startsWith('/api/asset/')||path.startsWith('/api/icon/');
+}
+function deniedForIp(ip){
+ return new Response('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>访问受限</title><body style="font:16px system-ui,sans-serif;background:#141516;color:#f2f2f2;padding:clamp(30px,8vw,100px);text-align:center"><h1>403 · 当前 IP 未获授权</h1><p>此网站仅允许管理员加入白名单的 IP 访问。</p><p style="color:#aab0b2">当前访问 IP：'+ip.replace(/[<&"']/g,'')+'</p><p>请联系管理员添加后重新访问。</p></body></html>',{
+  status:403,headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','vary':'CF-Connecting-IP'}
+ });
+}
+function iconKey(id){return ICON_PREFIX+id;}
+function iconRecord(obj){
+ const id=String(obj.key||'').slice(ICON_PREFIX.length);
+ return {id,name:String(obj.customMetadata?.name||'图片'),mime:String(obj.httpMetadata?.contentType||'image/png'),
+  size:obj.size||0,created_at:obj.customMetadata?.createdAt||'',url:'/api/icon/'+id};
+}
+async function iconFile(env,id,req){
+ if(!IP_UUID.test(id))return fail('图标不存在',404);
+ const object=await env.FILES.get(iconKey(id));
+ if(!object)return fail('图标不存在',404);
+ const mime=object.httpMetadata?.contentType||'application/octet-stream';
+ if(!imageMime(mime))return fail('不是可预览的图片',415);
+ const download=new URL(req.url).searchParams.get('download')==='1';
+ return new Response(req.method==='HEAD'?null:object.body,{headers:{
+  'content-type':mime,'x-content-type-options':'nosniff','cache-control':'private,no-store',
+  'content-disposition':download?'attachment; filename*=UTF-8\''+'\''+encodeURIComponent(object.customMetadata?.name||id+'.png'):'inline'
+ }});
+}
+
 async function handler(req,env){
  const url=new URL(req.url),p=url.pathname,method=req.method;
+ // Admin APIs remain reachable so administrators can safely change access IPs.
+ if(protectedPublicPath(p)){
+  const ip=normalizedClientIP(req.headers.get('cf-connecting-ip'));
+  const policy=await siteIpList(env);
+  if(!ip||!policy.ips.includes(ip))return deniedForIp(ip||'未知');
+ }
  // Previously copied root template URLs now use the same MSWQ frame as new links.
  // Bare /docx (or /docx?embed=1) remains the underlying read-only workspace.
  if(method==='GET'&&p==='/'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return html(ASSETS.html);
@@ -445,7 +508,8 @@ async function handler(req,env){
   const row=await env.DB.prepare("SELECT * FROM items WHERE slug=? AND status='published'").bind(slug).first();
   return row?out({ok:true,item:record(row)}):fail('页面不存在或尚未发布',404);
  }
- if(method==='GET'&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop(),req);
+ if(['GET','HEAD'].includes(method)&&p.startsWith('/api/asset/'))return serveAsset(env,p.split('/').pop(),req);
+ if(['GET','HEAD'].includes(method)&&p.startsWith('/api/icon/'))return iconFile(env,p.split('/').pop(),req);
  if(method==='POST'&&p==='/api/admin/login'){
   if(MSWQ_TEST_OPEN_ADMIN)return out({ok:true,testMode:true});
   if(!checkOrigin(req))return fail('请求来源不合法',403);
@@ -496,6 +560,73 @@ async function handler(req,env){
   if(!env.DOCX_DB||!env.DOCX_KV)return fail('DOCX 原模板存储未连接',503);
   const target=new URL(apiPath+url.search,url.origin);
   return DOCX_ADMIN_BACKEND.fetch(new Request(target,req),{DB:env.DOCX_DB,KHMB:env.DOCX_KV},{});
+ }
+
+
+ if(method==='GET'&&p==='/api/admin/ip-access'){
+  const policy=await siteIpList(env);
+  return out({ok:true,...policy,currentIp:normalizedClientIP(req.headers.get('cf-connecting-ip'))||''});
+ }
+ if(method==='PUT'&&p==='/api/admin/ip-access'){
+  const body=await parse(req,50000);
+  if(!Array.isArray(body.ips)||body.ips.length>300)return fail('IP 白名单必须为数组，最多 300 个',400);
+  const ips=[];
+  for(const raw of body.ips){
+   const ip=normalizedClientIP(raw);
+   if(!ip)return fail('IP 格式无效：'+cleanString(raw,80),400);
+   if(!ips.includes(ip))ips.push(ip);
+  }
+  const updatedAt=iso();
+  await env.FILES.put(IP_ACCESS_KEY,JSON.stringify({ips,updatedAt}),{httpMetadata:{contentType:'application/json'}});
+  return out({ok:true,ips,updatedAt,currentIp:normalizedClientIP(req.headers.get('cf-connecting-ip'))||''});
+ }
+ if(method==='GET'&&p==='/api/admin/icons'){
+  let cursor,icons=[];
+  do{
+   const x=await env.FILES.list({prefix:ICON_PREFIX,limit:500,cursor,include:['httpMetadata','customMetadata']});
+   icons.push(...(x.objects||[]).filter(item=>IP_UUID.test(item.key.slice(ICON_PREFIX.length))).map(iconRecord));
+   cursor=x.truncated?x.cursor:null;
+  }while(cursor&&icons.length<1000);
+  icons.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  return out({ok:true,icons});
+ }
+ if(method==='POST'&&p==='/api/admin/icons'){
+  const name=cleanString(decodeURIComponent(req.headers.get('x-file-name')||'图标.png'),200);
+  const mime=cleanString(req.headers.get('content-type')||'',80);
+  if(!imageMime(mime))return fail('仅支持 PNG、JPG、WEBP、GIF 图片',415);
+  if(Number(req.headers.get('content-length')||0)>12000000)return fail('图片不能超过 12MB',413);
+  const bytes=await req.arrayBuffer();
+  if(!bytes.byteLength||bytes.byteLength>12000000)return fail('图片必须是非空文件，且不能超过 12MB',413);
+  const id=crypto.randomUUID(),createdAt=iso();
+  await env.FILES.put(iconKey(id),bytes,{httpMetadata:{contentType:mime},customMetadata:{name,createdAt}});
+  return out({ok:true,icon:{id,name,mime,size:bytes.byteLength,created_at:createdAt,url:'/api/icon/'+id}},201);
+ }
+ if(method==='POST'&&p==='/api/admin/icons/import'){
+  const body=await parse(req,2000),sourceId=String(body.assetId||'');
+  if(!IP_UUID.test(sourceId))return fail('请选择有效的文件素材图片',400);
+  const src=await env.DB.prepare('SELECT * FROM assets WHERE id=?').bind(sourceId).first();
+  if(!src||!imageMime(src.mime))return fail('来源素材不存在或不是图片',404);
+  if(Number(src.size)>12000000)return fail('图片不能超过 12MB',413);
+  const object=await env.FILES.get(src.key);
+  if(!object)return fail('来源素材缺失',404);
+  const id=crypto.randomUUID(),createdAt=iso(),bytes=await object.arrayBuffer();
+  await env.FILES.put(iconKey(id),bytes,{httpMetadata:{contentType:src.mime},customMetadata:{name:src.name,createdAt}});
+  return out({ok:true,icon:{id,name:src.name,mime:src.mime,size:bytes.byteLength,created_at:createdAt,url:'/api/icon/'+id}},201);
+ }
+ const iconAdminFile=p.match(/^\/api\/admin\/icons\/([a-f0-9-]{36})\/file$/i);
+ if(iconAdminFile&&['GET','HEAD'].includes(method))return iconFile(env,iconAdminFile[1],req);
+ const assetAdminFile=p.match(/^\/api\/admin\/assets\/([a-f0-9-]{36})\/file$/i);
+ if(assetAdminFile&&['GET','HEAD'].includes(method))return serveAsset(env,assetAdminFile[1],req);
+ const iconToDelete=p.match(/^\/api\/admin\/icons\/([a-f0-9-]{36})$/i);
+ if(iconToDelete&&method==='DELETE'){
+  const id=iconToDelete[1];
+  if(!IP_UUID.test(id))return fail('图标不存在',404);
+  const obj=await env.FILES.head(iconKey(id));
+  if(!obj)return fail('图标不存在',404);
+  const ref=await env.DB.prepare('SELECT id FROM items WHERE thumbnail LIKE ? LIMIT 1').bind('%/api/icon/'+id+'%').first();
+  if(ref)return fail('此图标正在被前台卡片使用，请先更换该卡片封面',409);
+  await env.FILES.delete(iconKey(id));
+  return out({ok:true});
  }
 
  if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,testMode:MSWQ_TEST_OPEN_ADMIN});
