@@ -1,3 +1,23 @@
+# MSWQ · DOCX 完全独立运行（2026-11-22 已上线）
+
+**当前生产状态：** MSWQ 内置 DOCX 工作台及公开模板 API 都在 `mswq` Worker 内运行，不再代理 `ms-khmb` Worker。原 GitHub 仓库 `MS_KHMB` 不是 MSWQ 运行或重新部署的依赖。
+
+- 主 Worker：`mswq`，原站点 D1 `DB`、R2 `FILES` 保持不变
+- 专用 DOCX D1：`mswq_docx_independent_v1`，绑定 `DOCX_DB`，UUID `d31e76fe-8bc6-487e-8eac-3d1bcc09919b`
+- 专用 DOCX KV：`MSWQ_DOCX_INDEPENDENT_TEMPLATES_V1`，绑定 `DOCX_KV`，ID `331afae41bb9413c83e2b22cf40c2ba9`
+- **已移除 `DOCX_SERVICE -> ms-khmb`** Service Binding；不要在以后发布时恢复此绑定
+- DOCX 后端业务源码保存在本仓库 `src/docx-admin-backend.js`；前台 DOCX HTML 源码在 `legacy/docx-public.html`，通过内嵌静态资源提供
+- 公开接口 `/api/docx/templates`、`/api/docx/templates/:id/version`、`/api/docx/templates/:id/docx` 直接执行内置的 DOCX 后端，使用独立 D1/KV
+- 后台接口 `/api/admin/docx/*` 同样只使用独立 `DOCX_DB`、`DOCX_KV`；模板 ID 和旧直达链接保持不变
+- 迁移时已复制并核验旧服务中的 **16 份模板、60 个 KV 数据项和 2 条 D1 状态**，原数据保留未修改
+- 线上验证：全部 16 份 DOCX 下载正常；临时模板上传、下载、逐字节对比、删除成功；前台工作台与直达链接正常；原有 IP 白名单验证后已恢复
+- 删除旧 `MS_KHMB` GitHub 仓库不会自动删除原 Worker 或 KV/D1，但 MSWQ 已不依赖上述旧资源。**不要误删本段新建的 MSWQ 独立 D1/KV！**
+- 此迁移未修改 Signal、Telegram、其他 Worker，也未开启管理员鉴权。**MSWQ 后台仍为测试免密码模式，后续正式对外使用必须单独启用认证保护。**
+
+> 下面为保留的历史开发记录，其中描述「DOCX_SERVICE」「共用 MS_KHMB 模板存储」「依赖 ms-khmb」的旧段落已过时，不适用于当前生产版本。以后配置与发布必须以本节为准。
+
+---
+
 ## 内容管理：直接拖动工具到子分组（2026-11-22）
 
 - 「内容管理」按主分类展示各个子分组为独立、可拖拽的投放区域，空分组也可接受拖放。直接拖行首「⠿」到目标子分组，松手后保存；拖到同组其他工具行继续沿用原排序功能。
