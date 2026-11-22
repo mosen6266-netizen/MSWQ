@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mswq",
+  "main": "dist/mswq-worker.mjs",
+  "compatibility_date": "2026-11-18",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "NEW_MAIN_D1_NAME",
+      "database_id": "NEW_MAIN_D1_UUID"
+    },
+    {
+      "binding": "DOCX_DB",
+      "database_name": "NEW_DOCX_D1_NAME",
+      "database_id": "NEW_DOCX_D1_UUID"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "DOCX_KV",
+      "id": "NEW_DOCX_KV_NAMESPACE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "NEW_R2_BUCKET_NAME"
+    }
+  ],
+  "vars": {
+    "MSWQ_BACKUP_GITHUB_REPO": "NEW_GITHUB_OWNER/NEW_REPOSITORY"
+  }
+}
