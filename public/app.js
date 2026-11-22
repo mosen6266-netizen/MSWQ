@@ -101,13 +101,52 @@ function field(name,value,prop,placeholder='',kind='input'){
 }
 function publicHeader(back=false){return '<header class="topbar'+(back?' topbar-with-back':'')+'">'+(back?'<a class="topbar-back" href="/" data-mswq-back="true" aria-label="返回">返回</a>':'')+'<div class="brand">MS<em>WQ</em></div><span class="caption">CONTENT & TOOLS</span><div class="right"><span class="pill">公开内容中心</span></div></header>'}
 function itemHref(x){return '/view/'+encodeURIComponent(x.slug)}
+const PUBLIC_CACHE_KEY='mswq-public-catalog-v2';
+function readPublicCatalog(){
+ try{
+  const saved=JSON.parse(sessionStorage.getItem(PUBLIC_CACHE_KEY)||'null');
+  if(saved&&Date.now()-saved.stamp<600000&&Array.isArray(saved.items)&&saved.settings)return saved;
+ }catch{}
+ return null;
+}
+function savePublicCatalog(data){
+ try{sessionStorage.setItem(PUBLIC_CACHE_KEY,JSON.stringify({stamp:Date.now(),items:data.items,settings:data.settings}))}catch{}
+}
+async function applyHomeCatalog(data,seq,fromCache=false){
+ if(seq!==publicNavSeq||location.pathname!=='/')return;
+ const changed=!S.settings||JSON.stringify([S.items,S.settings])!==JSON.stringify([data.items,data.settings]);
+ savePublicCatalog(data);
+ if(!changed&&!fromCache&&document.getElementById('mswqHomeResults'))return;
+ S.items=data.items;S.settings=data.settings;
+ S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';
+ homeTabCache.clear();
+ applyCustomTypes(S.settings);
+ const available=orderedCategoryIds(S.settings).filter(k=>!(S.settings.hidden_types||[]).includes(k));
+ const remembered=history.state?.mswqHomeFilter;
+ S.filter=(remembered==='all'||available.includes(remembered))?remembered:(available[0]||'all');
+ if(S.filter==='bookmarks')try{await loadPublicBookmarks()}catch(e){S.bookmarksError=e.message}
+ if(seq!==publicNavSeq||location.pathname!=='/')return;
+ homeRender();
+}
 async function showHome(reuseLoaded=false){
- ++publicNavSeq;
+ const seq=++publicNavSeq;
  if(reuseLoaded&&restoreHomeDOM())return;
  document.title='MSWQ · 内容与工具中心';S.preview=false;
+ const cached=readPublicCatalog();
+ if(cached){
+  await applyHomeCatalog(cached,seq,true);
+  // Recheck published changes immediately without blocking already painted UI.
+  void api('/api/public').then(next=>applyHomeCatalog(next,seq,false))
+   .catch(e=>console.warn('MSWQ public list revalidation:',e.message));
+  return;
+ }
  root.innerHTML=publicHeader()+'<main class="loading">加载已发布的内容…</main>';
- try{const x=(reuseLoaded&&Array.isArray(S.items)&&S.settings)?{items:S.items,settings:S.settings}:await api('/api/public');S.items=x.items;S.settings=x.settings;S.bookmarkEntries=[];S.bookmarksLoaded=false;S.bookmarksPromise=null;S.bookmarksError='';applyCustomTypes(S.settings);const visibleTypes=orderedCategoryIds(S.settings).filter(k=>!(S.settings.hidden_types||[]).includes(k));const remembered=history.state?.mswqHomeFilter;S.filter=(remembered==='all'||visibleTypes.includes(remembered))?remembered:(visibleTypes[0]||'all');if(S.filter==='bookmarks'){try{await loadPublicBookmarks();}catch(err){S.bookmarksError=err.message;}}homeRender();}
- catch(e){root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>'}
+ try{
+  const data=(reuseLoaded&&Array.isArray(S.items)&&S.settings)?{items:S.items,settings:S.settings}:await api('/api/public');
+  await applyHomeCatalog(data,seq,true);
+ }catch(e){
+  if(seq===publicNavSeq)root.innerHTML=publicHeader()+'<div class="site-content empty">暂时无法读取公开内容：'+esc(e.message)+'</div>';
+ }
 }
 async function loadPublicBookmarks(){
  if(S.bookmarksLoaded)return;
