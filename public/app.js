@@ -410,6 +410,14 @@ function sideNav(){
  const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['categories','☷','分类管理'],['bookmarks','▣','网址收藏'],['profile','◈','个人名片'],['html-files','▣','HTML 文件管理'],['icons','▧','图标管理'],['ip-access','⛨','IP 访问限制'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
  return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&S.returnTab===x[0]?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>测试模式 · 免密码进入</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a></div></div></aside>';
 }
+const adminPanelCache=new Map();
+const adminScrollPositions=new Map();
+const adminCacheablePanels=new Set(['assets','icons','html-files']);
+function discardAdminPanelCache(kind){
+ if(kind==='assets'){adminPanelCache.delete('assets');adminPanelCache.delete('html-files');}
+ else if(kind==='icons')adminPanelCache.delete('icons');
+ else adminPanelCache.clear();
+}
 function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑','html-files':'HTML 文件管理',icons:'图标管理','ip-access':'IP 访问限制',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
  const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'全部分类都能重命名、拖动排序、隐藏、删除和恢复，不影响原有内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布','html-files':'上传和管理 HTML 网页和完整工具包；支持预览、源文件与 ZIP 下载',icons:'独立图标库：不与文件素材重复、同步或互相删除','ip-access':'只有白名单 IP 可以访问前台网站及 HTML 工具',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
@@ -422,7 +430,42 @@ function adminRender(){
   root.innerHTML='<div class="admin-layout admin-layout--tool">'+sideNav()+'<main class="admin-main admin-main--tool"><iframe class="admin-tool-frame" title="'+label+'" src="'+src+'" loading="eager" referrerpolicy="same-origin"></iframe></main></div>';
   return;
  }
+ // Change only the right-hand panel. Destroying the whole admin tree on
+ // every click used to discard and decode dozens of large thumbnails again.
+ const layout=root.querySelector('.admin-layout:not(.admin-layout--tool)');
+ if(layout){
+  const panel=layout.querySelector('#adminPanel'),main=layout.querySelector('.admin-main');
+  const previous=layout.dataset.activeTab||'';
+  if(panel&&main){
+   const beforeScroll=main.scrollTop;
+   if(previous&&previous!==S.tab){
+    adminScrollPositions.set(previous,beforeScroll);
+    if(adminCacheablePanels.has(previous)){
+     const saved=document.createDocumentFragment();
+     while(panel.firstChild)saved.appendChild(panel.firstChild);
+     adminPanelCache.set(previous,saved);
+    }
+   }
+   if(previous!==S.tab&&adminPanelCache.has(S.tab)){
+    panel.replaceChildren(adminPanelCache.get(S.tab));
+    adminPanelCache.delete(S.tab);
+   }else panel.innerHTML=adminPanel();
+   const head=layout.querySelector('.admin-head');
+   if(head){
+    head.querySelector('h1').textContent=heading;
+    head.querySelector('p').textContent=summary||'';
+    head.querySelector('.flex').innerHTML=action;
+   }
+   layout.querySelectorAll('.admin-nav').forEach(button=>button.classList.toggle('active',
+    button.dataset.id===S.tab||S.tab==='editor'&&button.dataset.id===S.returnTab));
+   layout.dataset.activeTab=S.tab;
+   const scroll=previous===S.tab?beforeScroll:adminScrollPositions.get(S.tab)||0;
+   main.scrollTop=scroll;
+   return;
+  }
+ }
  root.innerHTML='<div class="admin-layout">'+sideNav()+'<main class="admin-main"><header class="admin-head"><div><h1>'+heading+'</h1><p>'+summary+'</p></div><div class="flex">'+action+'</div></header><div class="admin-content" id="adminPanel">'+adminPanel()+'</div></main></div>';
+ root.querySelector('.admin-layout').dataset.activeTab=S.tab;
 }
 function adminPanel(){
  if(S.tab==='dashboard'){
