@@ -9,6 +9,15 @@ const asset=id=>id?(S.admin?'/api/admin/assets/'+encodeURIComponent(id)+'/file':
 const publicAsset=id=>id?'/api/asset/'+encodeURIComponent(id):'';
 const icon=id=>id?'/api/icon/'+encodeURIComponent(id):'';
 const iconPreview=id=>id?'/api/admin/icons/'+encodeURIComponent(id)+'/file':'';
+const thumbUrl=(kind,id)=>id?'/api/admin/thumb/'+kind+'/'+encodeURIComponent(id):'';
+const thumbCover=url=>String(url||'').replace(/^\/api\/icon\/([a-f0-9-]{36})$/i,(_,id)=>thumbUrl('icons',id)).replace(/^\/api\/asset\/([a-f0-9-]{36})$/i,(_,id)=>thumbUrl('assets',id));
+const imgThumb=(kind,id,original)=>'<img src="'+esc(thumbUrl(kind,id))+'" data-thumb-fallback="'+esc(original)+'" loading="lazy" decoding="async" alt="">';
+document.addEventListener('error',e=>{
+ const img=e.target;
+ if(img instanceof HTMLImageElement&&img.dataset.thumbFallback){
+  img.src=img.dataset.thumbFallback;delete img.dataset.thumbFallback;
+ }
+},true);
 const coverPreview=url=>String(url||'').replace(/^\/api\/icon\/([a-f0-9-]{36})$/i,(_,id)=>iconPreview(id)).replace(/^\/api\/asset\/([a-f0-9-]{36})$/i,(_,id)=>'/api/admin/assets/'+id+'/file');
 const htmlUrl=id=>/^[a-f0-9-]{36}$/i.test(String(id||''))?'https://mswq-html.mosen6266-ms007.workers.dev/html/'+id+'/':'';
 const shareUrl=item=>item?.kind==='html'?htmlUrl(item.content?.htmlAssetId):location.origin+itemHref(item);
@@ -35,7 +44,7 @@ function subgroupPickerHtml(item){
 function coverPickerHtml(item){
  const cover=item.thumbnail||'';
  return '<div class="field"><label>卡片顶部封面图片 / 图标</label>'+
-  (cover?'<div class="cover-editor-preview"><img src="'+esc(coverPreview(cover))+'" alt="当前卡片封面" loading="lazy"></div>':'<div class="muted small">当前使用默认 MSWQ 卡片顶部背景。</div>')+
+  (cover?'<div class="cover-editor-preview"><img src="'+esc(thumbCover(cover))+'" data-thumb-fallback="'+esc(coverPreview(cover))+'" alt="当前卡片封面" loading="lazy" decoding="async"></div>':'<div class="muted small">当前使用默认 MSWQ 卡片顶部背景。</div>')+
   '<div class="flex cover-editor-actions" style="flex-wrap:wrap;margin:10px 0">'+
   '<button class="btn sm green" data-action="pick-cover">从图标库选择</button>'+
   '<label class="btn sm special-upload-label">直接上传图片<input id="coverUpload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif"></label>'+
@@ -760,7 +769,7 @@ function iconsHtml(){
    '<span class="muted small">从素材库添加时复制出一个新文件，不共享删除操作。</span></div>')+
   row('我添加的图标','共 '+imgs.length+' 张 · 文件素材中的其他图片不会自动出现。',
    imgs.length?'<div class="icon-library-grid">'+imgs.map(a=>'<div class="icon-library-card">'+
-     '<img src="'+iconPreview(a.id)+'" loading="lazy" alt="'+esc(a.name)+'">'+
+     imgThumb('icons',a.id,iconPreview(a.id))+
      '<strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="muted tiny">'+Math.ceil(a.size/1024)+' KB</div>'+
      '<div class="flex" style="flex-wrap:wrap;gap:6px">'+
      '<button class="btn sm" data-action="copy-icon-url" data-id="'+a.id+'">复制图片链接</button>'+
@@ -789,7 +798,7 @@ function assetsHtml(){
  return row('素材库','此处管理一般图片、视频和附件；HTML 文件请进入左侧「HTML 文件管理」','<div class="field"><label>添加图片和文件（视频 50MB，其他 12MB）</label><input type="file" id="assetUpload" accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.filter(a=>a.mime!=='text/html').map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
 }
 function assetCard(a,picker=false){
- return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':a.mime?.startsWith('video/')?'<video muted playsinline preload="metadata" src="'+asset(a.id)+'"></video>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':a.mime==='text/html'?'<button class="btn sm green" data-action="new-html-card" data-id="'+a.id+'">添加前台卡片</button><a class="btn sm" target="_blank" rel="noopener noreferrer" href="'+htmlUrl(a.id)+'">打开HTML</a><button class="btn sm" data-action="copy-html-asset" data-id="'+a.id+'">复制直达链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
+ return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?imgThumb('assets',a.id,asset(a.id)):a.mime?.startsWith('video/')?'<div class="asset-video-placeholder" aria-label="视频素材">▶ 视频</div>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':a.mime==='text/html'?'<button class="btn sm green" data-action="new-html-card" data-id="'+a.id+'">添加前台卡片</button><a class="btn sm" target="_blank" rel="noopener noreferrer" href="'+htmlUrl(a.id)+'">打开HTML</a><button class="btn sm" data-action="copy-html-asset" data-id="'+a.id+'">复制直达链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
 }
 function subgroupManagerHtml(){
  const types=orderedCategoryIds(S.settings).filter(id=>!(S.settings?.deleted_types||[]).includes(id));
@@ -1161,7 +1170,7 @@ case 'retry-bookmarks':{
   await loadIcons();
   const imgs=S.icons;
   openModal('<h2>选择卡片封面 / 图标</h2><p class="muted small">选择之后请保存卡片，前台会使用这张图片。</p>'+
-    (imgs.length?'<div class="icon-picker-grid">'+imgs.map(a=>'<button type="button" class="icon-picker-item" data-action="select-cover" data-id="'+a.id+'"><img src="'+iconPreview(a.id)+'" loading="lazy" alt=""><span>'+esc(a.name)+'</span></button>').join('')+'</div>':'<div class="empty">图标库还没有图片。可以在编辑页面直接上传，或去左侧「图标管理」。</div>')+
+    (imgs.length?'<div class="icon-picker-grid">'+imgs.map(a=>'<button type="button" class="icon-picker-item" data-action="select-cover" data-id="'+a.id+'">'+imgThumb('icons',a.id,iconPreview(a.id))+'<span>'+esc(a.name)+'</span></button>').join('')+'</div>':'<div class="empty">图标库还没有图片。可以在编辑页面直接上传，或去左侧「图标管理」。</div>')+
     '<div class="flex end" style="margin-top:12px"><button class="btn" data-action="close-modal">取消</button></div>');
   break;
  }
@@ -1179,14 +1188,18 @@ case 'retry-bookmarks':{
  case 'open-icon-import':{
   await loadAssets();const imgs=S.assets.filter(a=>a.mime?.startsWith('image/'));
   openModal('<h2>从文件素材复制到图标库</h2><p class="muted small">选中的图片会独立复制一份，两个库删除操作互不影响。</p>'+
-   (imgs.length?'<div class="icon-picker-grid">'+imgs.map(a=>'<button class="icon-picker-item" data-action="import-icon" data-id="'+a.id+'"><img src="'+asset(a.id)+'" loading="lazy" alt=""><span>'+esc(a.name)+'</span></button>').join('')+'</div>':'<div class="empty">文件素材中没有图片。</div>')+
+   (imgs.length?'<div class="icon-picker-grid">'+imgs.map(a=>'<button class="icon-picker-item" data-action="import-icon" data-id="'+a.id+'">'+imgThumb('assets',a.id,asset(a.id))+'<span>'+esc(a.name)+'</span></button>').join('')+'</div>':'<div class="empty">文件素材中没有图片。</div>')+
    '<div class="flex end" style="margin-top:10px"><button class="btn" data-action="close-modal">取消</button></div>');break;
  }
  case 'import-icon':
   el.disabled=true;
   try{
-   await api('/api/admin/icons/import',{method:'POST',...jsonBody({assetId:id})});
-   closeModal();await loadIcons();adminRender();toast('已复制到独立图标库，原文件素材未修改');
+   const result=await api('/api/admin/icons/import',{method:'POST',...jsonBody({assetId:id})});
+   if(result.icon?.id){
+    const source=await fetch(asset(id),{credentials:'same-origin'});
+    if(source.ok)await uploadPreview('icons',result.icon.id,await source.blob());
+   }
+   closeModal();await loadIcons(true);adminRender();toast('已复制到独立图标库，原文件素材未修改');
   }finally{el.disabled=false;}
   break;
  case 'allow-my-ip':
@@ -1253,6 +1266,27 @@ async function saveSubgroups(next,message){
  const data=await api('/api/admin/settings',{method:'PUT',...jsonBody({subgroups:next})});
  S.settings=data.settings;adminRender();toast(message||'子分组已保存，前台已同步');
 }
+async function createSmallPreview(blob){
+ if(!blob||!blob.type.startsWith('image/'))return null;
+ const bitmap=await createImageBitmap(blob);
+ try{
+  const w=256,h=160,canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)return null;
+  ctx.fillStyle='#202223';ctx.fillRect(0,0,w,h);
+  const scale=Math.min(w/bitmap.width,h/bitmap.height),dw=bitmap.width*scale,dh=bitmap.height*scale;
+  ctx.drawImage(bitmap,(w-dw)/2,(h-dh)/2,dw,dh);
+  return await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',0.74));
+ }finally{bitmap.close()}
+}
+async function uploadPreview(kind,id,file){
+ try{
+  const tiny=await createSmallPreview(file);
+  if(!tiny||tiny.size>300000)return;
+  const res=await fetch(thumbUrl(kind,id),{method:'PUT',headers:{'content-type':'image/webp'},body:tiny,credentials:'same-origin'});
+  if(!res.ok)console.warn('MSWQ thumbnail not stored:',res.status);
+ }catch(e){console.warn('MSWQ thumbnail generation skipped:',e.message)}
+}
+
 async function uploadIcons(){
  const files=[...($('#iconUpload')?.files||[])];
  if(!files.length)return toast('请先选择图片');
@@ -1261,7 +1295,8 @@ async function uploadIcons(){
  for(const f of files){
   const mime=allowed[f.name.split('.').pop().toLowerCase()];
   if(!mime||f.size>12000000||!f.size){toast('跳过不支持或超过12MB的图片：'+f.name);continue}
-  await api('/api/admin/icons',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(f.name)},body:await f.arrayBuffer()});
+  const result=await api('/api/admin/icons',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(f.name)},body:await f.arrayBuffer()});
+  if(result.icon?.id)await uploadPreview('icons',result.icon.id,f);
   count++;
  }
  await loadIcons();adminRender();toast('图标库新增 '+count+' 张图片，文件素材未改变');
@@ -1279,7 +1314,8 @@ async function uploadAssets(){
   if(file.size>limit){toast('文件超过'+(limit===50000000?'50MB':limit===35000000?'35MB':'12MB')+': '+file.name);continue}
   let mime=file.type;
   if(!mime){const ext=file.name.split('.').pop().toLowerCase();mime={docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',mp4:'video/mp4',webm:'video/webm',txt:'text/plain',zip:'application/zip',html:'text/html',htm:'text/html'}[ext]||'application/octet-stream'}
-  await api('/api/admin/assets',{method:'POST',headers:{'content-type':/\.html?$/i.test(file.name)?'text/html':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+  const result=await api('/api/admin/assets',{method:'POST',headers:{'content-type':/\.html?$/i.test(file.name)?'text/html':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+  if(result.asset?.id&&mime.startsWith('image/'))await uploadPreview('assets',result.asset.id,file);
   success++;
  }
  await loadAssets();adminRender();toast('成功上传 '+success+' 个文件');
