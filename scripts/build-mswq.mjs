@@ -1,7 +1,7 @@
 // Reproducible MSWQ compiler. Run from repository root with Node.js 20+.
 // It embeds original UI files verbatim, adds the dedicated DOCX backend and
 // streaming migration exporter, and never includes account credentials.
-import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {readFile,readdir,mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 
 const root=process.cwd();
@@ -35,6 +35,31 @@ if(destinationHost){
  compiled=compiled.replace(re,'const HTML_VIEW_ORIGIN = '+JSON.stringify(url.origin)+';');
 }
 compiled+='\n'+backup+'\n';
+// Include every project source file not already embedded in ASSETS.
+// Exclude local credentials, build outputs, dependency caches and backups.
+const frontend=new Set(Object.values(manifest));
+const skipDirectories=new Set(['.git','.wrangler','node_modules','dist','__pycache__']);
+const allowedExtensions=new Set(['.md','.js','.mjs','.html','.css','.sql','.json','.jsonc','.toml','.py','.txt','.gitignore']);
+const extras={};
+async function scan(relative=''){
+ const current=path.join(root,relative);
+ for(const item of await readdir(current,{withFileTypes:true})){
+  if(item.name.startsWith('.env')||item.name.startsWith('.dev.vars')||item.name.endsWith('.zip')||item.name.endsWith('.bak'))continue;
+  const file=relative?relative+'/'+item.name:item.name;
+  if(item.isDirectory()){
+   if(!skipDirectories.has(item.name))await scan(file);
+   continue;
+  }
+  if(!item.isFile()||frontend.has(file))continue;
+  if(!allowedExtensions.has(path.extname(item.name).toLowerCase())&&item.name!=='.gitignore')continue;
+  const bytes=await readFile(path.join(root,file));
+  if(bytes.length>3000000)throw Error('Project source file too large for embedded snapshot: '+file);
+  extras[file]=bytes.toString('utf8');
+ }
+}
+await scan();
+if(Object.keys(extras).length<8)throw Error('Source file snapshot appears incomplete');
+compiled+='\nconst MSWQ_BACKUP_SOURCE_EXTRAS = '+JSON.stringify(extras)+';\n';
 if(compiled.includes('const ASSETS = __MSWQ_ASSETS__')||compiled.includes('const DOCX_ADMIN_BACKEND = __MSWQ_DOCX_API__'))throw Error('Unreplaced placeholders');
 await mkdir(path.join(root,'dist'),{recursive:true});
 await writeFile(path.join(root,'dist/mswq-worker.mjs'),compiled);
