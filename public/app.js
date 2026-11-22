@@ -52,6 +52,7 @@ const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',
 let toastTimer;
 // Preserve the already-painted homepage when opening lightweight public cards.
 let homeSnapshot=null;
+const homeTabCache=new Map();
 let publicNavSeq=0;
 function keepHomeDOM(){
  if(location.pathname!=='/'||!root.querySelector('.site-content'))return;
@@ -127,7 +128,7 @@ function homeRender(){
   const direct=x.direct_url&&absoluteHttpUrl(x.direct_url)?x.direct_url:'';
   const destination=direct?direct:itemHref(x);
   const tabAttrs=direct?' target="_blank" rel="noopener noreferrer"':'';
-  return '<a class="tile" href="'+esc(destination)+'"'+tabAttrs+'><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(x.kind==='html'?'HTML 文件':typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(direct?'打开完整页面 ↗':x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>';
+  return '<a class="tile" href="'+esc(destination)+'"'+tabAttrs+'><div class="tile-image'+(x.thumbnail?' tile-image--custom':'')+'">'+(x.thumbnail?'<img src="'+esc(x.thumbnail)+'" alt="" loading="lazy" decoding="async" fetchpriority="low">':'')+'<div class="tile-brand" aria-hidden="true"><span>MS</span><em>WQ</em></div></div><div class="tile-body"><span class="pill">'+typeIcon(x.kind)+' '+esc(x.kind==='html'?'HTML 文件':typeNames[x.kind]||'内容')+'</span><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||typeNames[x.category]||x.category||'点击打开内容')+'</p><div class="tile-bottom"><span>'+esc(typeNames[x.category]||x.category||fmt(x.updated_at))+'</span><span>'+(direct?'打开完整页面 ↗':x.kind==='document'?'打开文档工具 →':'查看内容 →')+'</span></div></div></a>';
  };
  const cards=(isBookmarkTab?items.filter(x=>['document','html'].includes(x.kind)):items).map(cardFor).join('');
  const layoutClass=(c.layout||'grid')==='list'?'list-view':(c.layout||'grid')==='compact'?'compact-view':'';
@@ -166,7 +167,21 @@ function homeRender(){
  // Keep the input, navbar and already-loaded images mounted on filter/search.
  const existingResults=document.getElementById('mswqHomeResults');
  if(existingResults&&location.pathname==='/'){
-  existingResults.innerHTML=content;
+  const nextKey=S.search.trim()?'':S.filter;
+  const lastKey=existingResults.dataset.homeCacheKey||'';
+  if(lastKey!==nextKey){
+   if(lastKey){
+    const fragment=document.createDocumentFragment();
+    while(existingResults.firstChild)fragment.appendChild(existingResults.firstChild);
+    homeTabCache.set(lastKey,fragment);
+    if(homeTabCache.size>10)homeTabCache.delete(homeTabCache.keys().next().value);
+   }
+   if(nextKey&&homeTabCache.has(nextKey)){
+    existingResults.replaceChildren(homeTabCache.get(nextKey));
+    homeTabCache.delete(nextKey);
+   }else existingResults.innerHTML=content;
+  }else existingResults.innerHTML=content;
+  existingResults.dataset.homeCacheKey=nextKey;
   const counter=document.getElementById('mswqHomeCount');
   if(counter)counter.textContent=count+' 个'+(isBookmarkTab?'网址':'内容');
   document.querySelectorAll('.filters button[data-action="filter"]').forEach(button=>
@@ -175,7 +190,7 @@ function homeRender(){
   if(search)search.placeholder=isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…';
   return;
  }
- root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="'+(isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…')+'" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':esc(typeNames[t]))+'</button>').join('')+'<span id="mswqHomeCount" class="muted small" style="margin-left:auto">'+count+' 个'+(isBookmarkTab?'网址':'内容')+'</span></div><div id="mswqHomeResults">'+content+'</div></main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
+ root.innerHTML=publicHeader()+'<section class="hero"><div class="hero-kicker">MSWQ DIGITAL WORKSPACE</div><h1>'+esc(c.headline||'内容与工具中心')+'</h1><p>'+esc(c.description||'打开你需要的流程或工具')+'</p><div class="search-box"><span>⌕</span><input id="homeSearch" placeholder="'+(isBookmarkTab?'搜索网址名称、域名、备注…':'搜索流程、剧本、文档、关键词…')+'" value="'+esc(S.search)+'" autocomplete="off"></div></section><main class="site-content">'+(c.announcement?'<div class="notice" style="margin-bottom:22px">'+esc(c.announcement)+'</div>':'')+'<div class="filters">'+types.map(t=>'<button class="filter '+(S.filter===t?'active':'')+'" data-action="filter" data-id="'+t+'">'+(t==='all'?'全部内容':esc(typeNames[t]))+'</button>').join('')+'<span id="mswqHomeCount" class="muted small" style="margin-left:auto">'+count+' 个'+(isBookmarkTab?'网址':'内容')+'</span></div><div id="mswqHomeResults" data-home-cache-key="'+(S.search.trim()?'':esc(S.filter))+'">'+content+'</div></main><footer class="footer">'+esc(c.footer||'© MSWQ · 内容发布平台')+'</footer>';
 }
 function anchorButton(label,url){
  if(!urlOk(url))return '';
@@ -217,7 +232,7 @@ function mediaTrigger(mediaType,fileId,label){
  if(!fileId)return '<div class="muted">尚未上传'+(mediaType==='video'?'视频':'图片')+'</div>';
  const id=esc(fileId),title=esc(label||'媒体文件'),video=mediaType==='video';
  return '<button class="profile-media-trigger" type="button" data-action="media-preview" data-id="'+id+'" data-media="'+(video?'video':'image')+'" data-title="'+title+'" aria-label="点击放大预览'+title+'">'+
-  (video?'<video src="'+asset(fileId)+'" muted playsinline preload="metadata" tabindex="-1"></video><span class="profile-media-play">▶</span>':'<img src="'+asset(fileId)+'" loading="lazy" alt="'+title+'">')+
+  (video?'<video src="'+asset(fileId)+'" muted playsinline preload="none" tabindex="-1"></video><span class="profile-media-play">▶</span>':'<img src="'+asset(fileId)+'" loading="lazy" decoding="async" alt="'+title+'">')+
   '<span class="profile-media-label">点击放大预览</span></button>'+
   '<a class="profile-media-download" href="'+asset(fileId)+'?download=1" download>↓ 保存 / 下载'+(video?'视频':'图片')+'</a>';
 }
