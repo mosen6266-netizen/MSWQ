@@ -424,8 +424,42 @@ async function showReader(slugText,localItem=null,preloadedItem=null){
  }
  }catch(e){root.innerHTML='<div class="empty">'+esc(e.message)+'<p><a class="btn" data-mswq-back="true" href="/">返回</a></p></div>'}
 }
+function renderAdminLogin(){
+ root.innerHTML='<div class="login-screen"><div class="login-box" style="max-width:410px;width:calc(100% - 32px)">'+
+  '<div class="brand" style="margin-bottom:14px">MS<em>WQ</em></div>'+
+  '<h1>管理员安全登录</h1><p class="muted">需要管理员密码和 Google Authenticator 动态验证码。</p>'+
+  '<form id="mswqAdminLogin" autocomplete="on" class="stack" style="gap:16px">'+
+  '<div class="field"><label for="mswqAdminPassword">管理员密码</label><input id="mswqAdminPassword" name="password" type="password" required autocomplete="current-password" placeholder="输入管理员密码"></div>'+
+  '<div class="field"><label for="mswqAdminCode">Google 验证码</label><input id="mswqAdminCode" name="code" type="text" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="6 位动态验证码"></div>'+
+  '<div id="mswqAuthError" role="alert" style="color:#f4a7a7;min-height:20px;font-size:13px"></div>'+
+  '<button type="submit" class="btn primary" style="width:100%">安全登录</button></form>'+
+  '<p style="margin-top:18px"><a href="/">返回首页</a></p>'+
+  '</div></div>';
+}
+document.addEventListener('submit',async event=>{
+ if(event.target?.id!=='mswqAdminLogin')return;
+ event.preventDefault();
+ const form=event.target,button=form.querySelector('button[type=submit]');
+ const error=document.getElementById('mswqAuthError');
+ if(button.disabled)return;
+ button.disabled=true;
+ if(error)error.textContent='';
+ try{
+  await api('/api/admin/login',{method:'POST',...jsonBody({
+   password:form.elements.password.value,
+   code:form.elements.code.value.trim()
+  })});
+  form.elements.password.value='';
+  form.elements.code.value='';
+  await openAdmin();
+ }catch(err){
+  if(error)error.textContent=err.message;
+  form.elements.code.value='';
+  form.elements.code.focus();
+ }finally{button.disabled=false;}
+});
 async function openAdmin(){
- root.innerHTML='<div class="loading center" style="padding:80px">正在加载测试后台…</div>';
+ root.innerHTML='<div class="loading center" style="padding:80px">正在验证管理员身份…</div>';
  try{
   await api('/api/admin/me');
   S.admin=true;
@@ -438,6 +472,7 @@ async function openAdmin(){
   adminRender();
  }catch(err){
   S.admin=false;
+  if(err.message==='请先登录管理后台'){renderAdminLogin();return;}
   root.innerHTML='<div class="login-screen"><div class="login-box"><h1>后台暂时无法打开</h1><p>'+esc(err.message)+'</p><button class="btn primary" onclick="location.reload()">重新加载</button><p style="margin-top:20px"><a href="/">返回首页</a></p></div></div>';
  }
 }
@@ -447,7 +482,7 @@ async function loadAdmin(){
 }
 function sideNav(){
  const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['categories','☷','分类管理'],['bookmarks','▣','网址收藏'],['profile','◈','个人名片'],['html-files','▣','HTML 文件管理'],['icons','▧','图标管理'],['ip-access','⛨','IP 访问限制'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
- return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&S.returnTab===x[0]?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>测试模式 · 免密码进入</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a></div></div></aside>';
+ return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&S.returnTab===x[0]?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>Google 双重验证 · 已登录</div><div class="flex" style="margin-top:12px;gap:12px"><a href="/" target="_blank">打开前台 ↗</a><button class="btn sm" data-action="admin-logout">退出登录</button></div></div></aside>';
 }
 const adminPanelCache=new Map();
 const adminScrollPositions=new Map();
@@ -1067,6 +1102,10 @@ async function assignContentSubgroup(id,category,targetSubgroup){
 }
 async function perform(action,id,el){
  switch(action){
+ case 'admin-logout':{
+  await api('/api/admin/logout',{method:'POST'});
+  S.admin=false;location.assign('/admin');break;
+ }
  case 'filter':{
  S.filter=id;
  history.replaceState({...history.state,mswqHomeFilter:id},'',location.href);
