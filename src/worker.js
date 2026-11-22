@@ -34,6 +34,16 @@ function adminEmbeddedHtml(value){
  headers.set('content-security-policy',(headers.get('content-security-policy')||'').replace("frame-ancestors 'none'","frame-ancestors 'self'"));
  return new Response(value,{status:200,headers});
 }
+// Static resources are immutable for a given content hash, but every browser
+// revalidation still passes through the IP allowlist above. No shared caching.
+async function serveStaticBrowserAsset(req,body,mime){
+ const tag='"mswq-static-'+base64url((await digest(body)).slice(0,15))+'"';
+ const headers={'content-type':mime,'cache-control':'private, no-cache',
+  'etag':tag,'x-content-type-options':'nosniff'};
+ const values=(req.headers.get('if-none-match')||'').split(',').map(x=>x.trim().replace(/^W\//i,''));
+ if(values.includes(tag))return new Response(null,{status:304,headers});
+ return new Response(body,{status:200,headers});
+}
 function base64url(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function fromBase64url(s){return Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));}
 async function digest(s){return new Uint8Array(await crypto.subtle.digest('SHA-256',enc(s)));}
@@ -365,6 +375,12 @@ async function serveAsset(env,id,request){
  const url=new URL(request.url),download=url.searchParams.get('download')==='1';
  const mime=(imageMime(row.mime)||videoMime(row.mime))?row.mime:'application/octet-stream';
  const total=Number(row.size)||0;
+ const canBrowserCache=imageMime(mime)&&!download;
+ const tag=canBrowserCache?'"mswq-image-'+id+'-'+total+'-'+(row.created_at||'')+'"':'';
+ const tags=(request.headers.get('if-none-match')||'').split(',').map(x=>x.trim().replace(/^W\//i,''));
+ if(tag&&tags.includes(tag))return new Response(null,{status:304,headers:{
+  'etag':tag,'cache-control':'private, no-cache','x-content-type-options':'nosniff'
+ }});
  const rangeHeader=videoMime(mime)&&!download?request.headers.get('range'):null;
  let range=null;
  if(rangeHeader){
@@ -381,9 +397,10 @@ async function serveAsset(env,id,request){
   'content-type':mime,'x-content-type-options':'nosniff',
   'content-security-policy':"default-src 'none'; sandbox",
   'content-disposition':(download||(!imageMime(mime)&&!videoMime(mime))?'attachment':'inline')+"; filename*=UTF-8''"+encodeURIComponent(row.name),
-  'cache-control':'private,no-store',
+  'cache-control':canBrowserCache?'private, no-cache':'private,no-store',
   'accept-ranges':videoMime(mime)?'bytes':'none'
  });
+ if(tag)headers.set('etag',tag);
  if(range){
   headers.set('content-range','bytes '+range.offset+'-'+(range.offset+range.length-1)+'/'+total);
   headers.set('content-length',String(range.length));
@@ -446,8 +463,14 @@ async function iconFile(env,id,req){
  const mime=object.httpMetadata?.contentType||'application/octet-stream';
  if(!imageMime(mime))return fail('不是可预览的图片',415);
  const download=new URL(req.url).searchParams.get('download')==='1';
+ const tag='"mswq-icon-'+id+'-'+String(object.etag||'')+'"';
+ const cache=download?'private,no-store':'private, no-cache';
+ const tags=(req.headers.get('if-none-match')||'').split(',').map(x=>x.trim().replace(/^W\//i,''));
+ if(!download&&tags.includes(tag))return new Response(null,{status:304,headers:{
+  'etag':tag,'cache-control':cache,'x-content-type-options':'nosniff'
+ }});
  return new Response(req.method==='HEAD'?null:object.body,{headers:{
-  'content-type':mime,'x-content-type-options':'nosniff','cache-control':'private,no-store',
+  'content-type':mime,'x-content-type-options':'nosniff','cache-control':cache,'etag':tag,
   'content-disposition':download?'attachment; filename*=UTF-8\''+'\''+encodeURIComponent(object.customMetadata?.name||id+'.png'):'inline'
  }});
 }
@@ -530,12 +553,12 @@ async function handler(req,env){
   }
  }
  if(method==='GET'&&(p==='/'||p==='/admin'||p==='/admin/'||p.startsWith('/view/')))return html(ASSETS.html);
- if(method==='GET'&&p==='/assets/app.js')return new Response(ASSETS.js,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
- if(method==='GET'&&p==='/assets/package-upload.js')return new Response(ASSETS.packageUpload,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
- if(method==='GET'&&p==='/assets/html-package-ui.js')return new Response(ASSETS.packageUI,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
- if(method==='GET'&&p==='/assets/app.css')return new Response(ASSETS.css,{headers:{'content-type':'text/css; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
- if(method==='GET'&&p==='/assets/personal-switch.js')return new Response(ASSETS.personalSwitch,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
- if(method==='GET'&&p==='/assets/legacy-bridge.js')return new Response(ASSETS.bridge,{headers:{'content-type':'application/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+ if(method==='GET'&&p==='/assets/app.js')return serveStaticBrowserAsset(req,ASSETS.js,'application/javascript; charset=utf-8');
+ if(method==='GET'&&p==='/assets/package-upload.js')return serveStaticBrowserAsset(req,ASSETS.packageUpload,'application/javascript; charset=utf-8');
+ if(method==='GET'&&p==='/assets/html-package-ui.js')return serveStaticBrowserAsset(req,ASSETS.packageUI,'application/javascript; charset=utf-8');
+ if(method==='GET'&&p==='/assets/app.css')return serveStaticBrowserAsset(req,ASSETS.css,'text/css; charset=utf-8');
+ if(method==='GET'&&p==='/assets/personal-switch.js')return serveStaticBrowserAsset(req,ASSETS.personalSwitch,'application/javascript; charset=utf-8');
+ if(method==='GET'&&p==='/assets/legacy-bridge.js')return serveStaticBrowserAsset(req,ASSETS.bridge,'application/javascript; charset=utf-8');
  if(method==='GET'&&(p==='/docx'||p==='/docx/')){
   if(url.searchParams.get('embed')!=='1'&&/^[a-f0-9-]{16,60}$/i.test(url.searchParams.get('template')||''))return html(ASSETS.html);
   return publicDocxPage(ASSETS.docx);
