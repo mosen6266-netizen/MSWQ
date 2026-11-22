@@ -14,7 +14,7 @@ function cleanPath(raw){
 }
 function normalizeFiles(files){
  if(!files.length)throw Error('没有可上传的文件');
- const input=files.filter(f=>f.path&&!f.path.endsWith('/')&&!f.path.startsWith('__MACOSX/')&&!f.path.split('/').pop().startsWith('._'));
+ const input=files.filter(f=>f.path&&!f.path.endsWith('/')&&!f.path.startsWith('__MACOSX/')&&!f.path.split('/').pop().startsWith('._')&&!['.DS_Store','Thumbs.db','desktop.ini'].includes(f.path.split('/').pop()));
  const common=input[0]?.path.split('/')[0];
  const removeRoot=common&&input.every(f=>f.path.startsWith(common+'/'));
  const seen=new Set(),result=[];
