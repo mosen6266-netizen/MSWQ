@@ -59,10 +59,11 @@ async function scan(relative=''){
 }
 await scan();
 if(Object.keys(extras).length<8)throw Error('Source file snapshot appears incomplete');
-compiled+='\nconst MSWQ_BACKUP_SOURCE_EXTRAS = '+JSON.stringify(extras)+';\n';
+await writeFile(path.join(root,'dist/mswq-source-snapshot.json'),JSON.stringify(extras));
 if(compiled.includes('const ASSETS = __MSWQ_ASSETS__')||compiled.includes('const DOCX_ADMIN_BACKEND = __MSWQ_DOCX_API__'))throw Error('Unreplaced placeholders');
 await mkdir(path.join(root,'dist'),{recursive:true});
 await writeFile(path.join(root,'dist/mswq-worker.mjs'),compiled);
 console.log('Created dist/mswq-worker.mjs ('+Buffer.byteLength(compiled)+' bytes)');
 console.log('Files '+Object.keys(assets).join(', '));
 console.log('HTML origin '+(destinationHost||'existing source default; set MSWQ_HTML_ORIGIN for a new account'));
+console.log('IMPORTANT: upload dist/mswq-source-snapshot.json to R2 key mswq-private/source-snapshot-v1.json on every code deployment.');
