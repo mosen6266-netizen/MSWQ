@@ -1,4 +1,4 @@
-/* MSWQ-owned test adaptation of MS_KHMB document API. Do not deploy separately. */
+/* MSWQ-owned self-contained DOCX template backend. Uses only MSWQ's dedicated DOCX_DB and DOCX_KV bindings. */
 (()=>{
 const MAX_SIZE=8*1024*1024;
 const RESP_HEADERS={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
