@@ -295,6 +295,36 @@ async function importBundle(env,body){
  }
  return {ok:true,count:done.length,items:done,warnings};
 }
+
+const HTML_PACKAGE_TYPES={
+ html:'text/html',htm:'text/html',css:'text/css',js:'text/javascript',mjs:'text/javascript',json:'application/json',
+ png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',svg:'image/svg+xml',gif:'image/gif',webp:'image/webp',
+ ico:'image/x-icon',avif:'image/avif',bmp:'image/bmp',woff:'font/woff',woff2:'font/woff2',ttf:'font/ttf',
+ otf:'font/otf',eot:'application/vnd.ms-fontobject',wasm:'application/wasm',webmanifest:'application/manifest+json',
+ xml:'application/xml',txt:'text/plain',map:'application/json',pdf:'application/pdf',mp3:'audio/mpeg',
+ mp4:'video/mp4',webm:'video/webm',wav:'audio/wav',ogg:'audio/ogg'
+};
+const HTML_PACKAGE_UUID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
+function htmlPackagePath(raw){
+ if(typeof raw!=='string'||!raw||raw.length>260||/[\u0000-\u001f\u007f?#]/.test(raw)||raw.startsWith('/')||raw.includes('\\')||/^[a-z]:/i.test(raw))return '';
+ const bits=raw.split('/');
+ if(bits.some(s=>!s||s==='.'||s==='..'||s.length>120))return '';
+ return Object.hasOwn(HTML_PACKAGE_TYPES,(bits[bits.length-1].split('.').pop()||'').toLowerCase())?raw:'';
+}
+function htmlPackageMime(path){
+ return HTML_PACKAGE_TYPES[path.split('.').pop().toLowerCase()]||'application/octet-stream';
+}
+function htmlPackageFileKey(id,version,path){return 'html-packages/'+id+'/'+version+'/'+path;}
+function htmlPackageManifestKey(id){return 'html-packages/'+id+'/manifest.json';}
+async function htmlPackageManifest(env,id){
+ const obj=await env.FILES.get(htmlPackageManifestKey(id));
+ if(!obj)return null;
+ try{
+  const manifest=JSON.parse(await obj.text());
+  return manifest&&HTML_PACKAGE_UUID.test(manifest.version)&&manifest.files&&typeof manifest.files==='object'?manifest:null;
+ }catch{return null}
+}
+
 function imageMime(type){return /^image\/(?:jpeg|png|gif|webp)$/i.test(type);}
 function videoMime(type){return /^video\/(?:mp4|webm)$/i.test(type);}
 async function serveAsset(env,id,request){
@@ -653,6 +683,86 @@ async function handler(req,env){
   return out({ok:true,item:await saveItem(env,normalized,old)});
  }
  if(method==='POST'&&p==='/api/admin/import')return out(await importBundle(env,await parse(req,10000000)));
+
+ // Upload and activate complete HTML tool packages. Keep the same HTML asset ID
+ // when replacing a package so front-end cards and direct links do not change.
+ if(method==='POST'&&p==='/api/admin/html-packages/file'){
+  const id=req.headers.get('x-package-id')||'',version=req.headers.get('x-package-version')||'';
+  let path='';
+  try{path=htmlPackagePath(decodeURIComponent(req.headers.get('x-package-path')||''))}catch{}
+  if(!HTML_PACKAGE_UUID.test(id)||!HTML_PACKAGE_UUID.test(version)||!path)return fail('工具包文件名或上传标识不合法',400);
+  const limit=/\.(?:mp4|webm)$/i.test(path)?50000000:35000000;
+  if(Number(req.headers.get('content-length')||0)>limit)return fail('单个工具文件超过上传限制',413);
+  const bytes=await req.arrayBuffer();
+  if(!bytes.byteLength||bytes.byteLength>limit)return fail('工具文件不能为空，且最大不超过 '+Math.round(limit/1000000)+'MB',413);
+  const key=htmlPackageFileKey(id,version,path);
+  await env.FILES.put(key,bytes,{httpMetadata:{contentType:htmlPackageMime(path)}});
+  return out({ok:true,path,size:bytes.byteLength});
+ }
+ if(method==='POST'&&p==='/api/admin/html-packages/archive'){
+  const id=req.headers.get('x-package-id')||'',version=req.headers.get('x-package-version')||'';
+  if(!HTML_PACKAGE_UUID.test(id)||!HTML_PACKAGE_UUID.test(version))return fail('压缩包上传标识无效');
+  if(Number(req.headers.get('content-length')||0)>70000000)return fail('ZIP 超过 70MB',413);
+  const bytes=await req.arrayBuffer();
+  if(!bytes.byteLength||bytes.byteLength>70000000)return fail('ZIP 超过限制',413);
+  await env.FILES.put(htmlPackageFileKey(id,version,'__original.zip'),bytes,{httpMetadata:{contentType:'application/zip'}});
+  return out({ok:true,size:bytes.byteLength});
+ }
+ if(method==='POST'&&p==='/api/admin/html-packages/publish'){
+  const body=await parse(req,100000);
+  const id=String(body.id||''),version=String(body.version||''),entry=htmlPackagePath(body.entry);
+  const name=cleanString(body.name||'HTML 工具包',200).trim();
+  if(!HTML_PACKAGE_UUID.test(id)||!HTML_PACKAGE_UUID.test(version)||!entry||!/.html?$/i.test(entry)||!name)return fail('工具包名称或入口页面不合法');
+  if(!Array.isArray(body.files)||!body.files.length||body.files.length>300)return fail('工具包必须包含 1 至 300 个文件');
+  const old=await env.DB.prepare('SELECT * FROM assets WHERE id=?').bind(id).first();
+  if(old&&old.mime!=='text/html')return fail('只能覆盖原来的 HTML 类型文件',409);
+  const manifestFiles={},used=new Set();let total=0;
+  for(const f of body.files){
+   const path=htmlPackagePath(f.path),size=Number(f.size);
+   if(!path||used.has(path.toLowerCase())||!Number.isSafeInteger(size)||size<=0||size>50000000)return fail('工具包中包含重复或非法文件路径',400);
+   used.add(path.toLowerCase());
+   const key=htmlPackageFileKey(id,version,path),obj=await env.FILES.head(key);
+   if(!obj||obj.size!==size)return fail('文件缺失或上传不完整: '+path,409);
+   total+=size;
+   if(total>150000000)return fail('工具包总容量不能超过 150MB',413);
+   manifestFiles[path]={key,size,mime:htmlPackageMime(path)};
+  }
+  if(!manifestFiles[entry])return fail('入口 HTML 不在所上传文件列表中',400);
+  let archiveKey='';
+  if(body.hasArchive===true){
+   archiveKey=htmlPackageFileKey(id,version,'__original.zip');
+   if(!await env.FILES.head(archiveKey))return fail('ZIP 压缩包未上传完整',409);
+  }
+  const oldManifest=await htmlPackageManifest(env,id);
+  const manifest={version,entry,files:manifestFiles,archiveKey,name,updatedAt:iso(),previousVersion:oldManifest?.version||null};
+  const entryKey=manifestFiles[entry].key,entrySize=manifestFiles[entry].size;
+  if(old){
+   await env.DB.prepare('UPDATE assets SET name=?,size=?,key=? WHERE id=?').bind(name,entrySize,entryKey,id).run();
+  }else{
+   await env.DB.prepare('INSERT INTO assets(id,name,mime,size,key,created_at) VALUES(?,?,?,?,?,?)')
+    .bind(id,name,'text/html',entrySize,entryKey,iso()).run();
+  }
+  // Publish the version pointer last: old pages remain intact until all files are present.
+  await env.FILES.put(htmlPackageManifestKey(id),JSON.stringify(manifest),{httpMetadata:{contentType:'application/json'}});
+  return out({ok:true,id,entry,totalSize:total,count:body.files.length,url:htmlAssetLink(id),replaced:!!old});
+ }
+ const packageInfo=p.match(/^\/api\/admin\/html-packages\/([a-f0-9-]{36})(?:\/(download))?$/i);
+ if(packageInfo&&HTML_PACKAGE_UUID.test(packageInfo[1])&&method==='GET'){
+  const id=packageInfo[1],row=await env.DB.prepare('SELECT id,name,mime FROM assets WHERE id=?').bind(id).first();
+  if(!row||row.mime!=='text/html')return fail('HTML 工具不存在',404);
+  const m=await htmlPackageManifest(env,id);
+  if(!m)return fail('这是独立 HTML 文件，不是多文件工具包',404);
+  if(packageInfo[2]==='download'){
+   if(!m.archiveKey)return fail('此工具包未保存 ZIP 下载副本',404);
+   const obj=await env.FILES.get(m.archiveKey);
+   if(!obj)return fail('ZIP 文件不存在',404);
+   return new Response(obj.body,{headers:{'content-type':'application/zip','cache-control':'private,no-store',
+    'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(row.name.replace(/\.zip$/i,'')+'.zip')}});
+  }
+  return out({ok:true,id,name:row.name,entry:m.entry,version:m.version,hasArchive:!!m.archiveKey,
+   url:htmlAssetLink(id),files:Object.entries(m.files).map(([path,f])=>({path,size:f.size,mime:f.mime}))});
+ }
+
  if(method==='GET'&&p==='/api/admin/assets'){
   const rows=await env.DB.prepare('SELECT * FROM assets ORDER BY created_at DESC LIMIT 500').all();
   return out({ok:true,assets:(rows.results||[]).map(x=>({id:x.id,name:x.name,mime:x.mime,size:x.size,created_at:x.created_at,url:'/api/asset/'+x.id}))});
@@ -686,7 +796,18 @@ async function handler(req,env){
   // Avoid deleting referenced assets: content holds opaque asset IDs.
   const ref=await env.DB.prepare('SELECT id FROM items WHERE content LIKE ? LIMIT 1').bind('%'+id+'%').first();
   if(ref)return fail('有内容仍在使用此文件，请先移除引用',409);
+  const bundle=await htmlPackageManifest(env,id);
+  if(bundle){
+   let cursor;
+   do{
+    const listed=await env.FILES.list({prefix:'html-packages/'+id+'/',limit:500,cursor});
+    if(listed.objects.length)await env.FILES.delete(listed.objects.map(x=>x.key));
+    cursor=listed.truncated?listed.cursor:undefined;
+   }while(cursor);
+  }
   await env.FILES.delete(row.key);
+  // Older standalone HTML versions might still exist at the legacy UUID key.
+  if(bundle&&row.key!==id)await env.FILES.delete(id);
   await env.DB.prepare('DELETE FROM assets WHERE id=?').bind(id).run();
   return out({ok:true});
  }
