@@ -33,7 +33,7 @@ GitHub 普通源码提交有单文件大小限制；完整迁移包可能超过 
 4. 编译并部署主 Worker mswq 与独立 HTML 主机 Worker mswq-html，绑定名称必须为 DB、DOCX_DB、DOCX_KV、FILES。新资源 ID 不得复用旧账号 ID。
 5. 重新生成管理员密码、Google Authenticator TOTP 密钥及会话密钥并设置为新 Worker Secret；不复制旧账号密码或身份认证信息。
 6. 将 ZIP 内源码提交到新 GitHub main 分支（不提交备份 ZIP），实际验证管理后台、所有个人流程/群剧本/HTML 工具、DOCX、图片图标、名片、分类排序、按钮跳转及返回键。
-7. 只有在新网站全部数据和功能验收通过后，**删除 GitHub Releases 中临时 MSWQ-complete-*.zip 附件**，保留正常源码及新云端数据，旧系统一律不动。
+7. 只有在新网站全部数据和功能验收通过后，**删除 GitHub Releases 中临时 MSWQ-complete-*.zip 附件**（可调用 GitHub 删除 Release asset API，或使用 scripts/cleanup-github-release.py --repo NEW_OWNER/NEW_REPO --verified），保留正常源码及新云端数据，旧系统一律不动。
 
 ### 可用的自动化脚本
 
