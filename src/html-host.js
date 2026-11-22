@@ -17,6 +17,7 @@ export default {
   const url=new URL(request.url),match=url.pathname.match(/^\/html\/([a-f0-9-]{36})(?:\/(.*))?$/i);
   if(!match||!UUID.test(match[1]))return new Response('Not Found',{status:404});
   const id=match[1];
+  if(!match[2]&&!url.pathname.endsWith('/')){url.pathname+='/';return Response.redirect(url.toString(),302)}
   const manifestFile=await env.FILES.get('html-packages/'+id+'/manifest.json');
   if(manifestFile){
    let manifest;
