@@ -356,7 +356,7 @@ async function serveAsset(env,id,request){
   'content-type':mime,'x-content-type-options':'nosniff',
   'content-security-policy':"default-src 'none'; sandbox",
   'content-disposition':(download||(!imageMime(mime)&&!videoMime(mime))?'attachment':'inline')+"; filename*=UTF-8''"+encodeURIComponent(row.name),
-  'cache-control':download?'private,no-store':'public,max-age=86400',
+  'cache-control':'private,no-store',
   'accept-ranges':videoMime(mime)?'bytes':'none'
  });
  if(range){
@@ -386,7 +386,7 @@ function normalizedClientIP(value){
   }catch{return ''}
  }
  const parts=t.split('.');
- if(parts.length!==4||parts.some(x=>!/(?:0|[1-9]\d{0,2})$/.test(x)||Number(x)>255))return '';
+ if(parts.length!==4||parts.some(x=>!/^(?:0|[1-9]\d{0,2})$/.test(x)||Number(x)>255))return '';
  return parts.map(Number).join('.');
 }
 async function siteIpList(env){
@@ -458,7 +458,7 @@ async function handler(req,env){
      // Only signed/versioned navigation URLs are cacheable. An updated item
      // receives a new versioned URL, so buttons immediately show new content.
      const stableVersion=fast&&url.searchParams.get('v')===String(item.version);
-     const cachePolicy=stableVersion?'private, max-age=600':'no-store';
+     const cachePolicy='no-store';
      const etag='"mswq-'+item.id+'-'+String(exact.etag||'')+'-'+String(item.version)+'-'+(fast?'fast':'full')+'"';
      const headers={
       'content-type':'text/html; charset=utf-8','cache-control':cachePolicy,
