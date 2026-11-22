@@ -422,13 +422,45 @@ function adminRender(){
  const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑','html-files':'HTML 文件管理',icons:'图标管理','ip-access':'IP 访问限制',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
  const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'全部分类都能重命名、拖动排序、隐藏、删除和恢复，不影响原有内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布','html-files':'上传和管理 HTML 网页和完整工具包；支持预览、源文件与 ZIP 下载',icons:'独立图标库：不与文件素材重复、同步或互相删除','ip-access':'只有白名单 IP 可以访问前台网站及 HTML 工具',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
  const action=S.tab==='library'?'<button class="btn green" data-action="new-html-card">＋ 添加 HTML 卡片</button><button class="btn green" data-action="open-docx-create">＋ 添加 DOCX 入口</button><button class="btn primary" data-action="new-item">＋ 新建其他内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
- // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
+ // Both large editors are mounted once and reused. Hiding an iframe
+ // retains its document, unsaved form state and initialized scripts.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
-  const isDocx=S.tab==='legacy-docx';
-  const src=isDocx?'/admin/docx-editor':'/admin/legacy-editor';
+  const isDocx=S.tab==='legacy-docx',src=isDocx?'/admin/docx-editor':'/admin/legacy-editor';
   const label=isDocx?'DOCX 模板后台':'原版流程编辑器';
-  root.innerHTML='<div class="admin-layout admin-layout--tool">'+sideNav()+'<main class="admin-main admin-main--tool"><iframe class="admin-tool-frame" title="'+label+'" src="'+src+'" loading="eager" referrerpolicy="same-origin"></iframe></main></div>';
+  let layout=root.querySelector('.admin-layout');
+  if(!layout){
+   root.innerHTML='<div class="admin-layout">'+sideNav()+'<main class="admin-main"><header class="admin-head" hidden><div><h1></h1><p></p></div><div class="flex"></div></header><div class="admin-content" id="adminPanel" hidden></div></main></div>';
+   layout=root.querySelector('.admin-layout');
+  }
+  const main=layout.querySelector('.admin-main');
+  layout.classList.add('admin-layout--tool');main.classList.add('admin-main--tool');
+  layout.querySelector('.admin-head')?.setAttribute('hidden','');
+  layout.querySelector('#adminPanel')?.setAttribute('hidden','');
+  let host=main.querySelector('.admin-tool-host');
+  if(!host){host=document.createElement('div');host.className='admin-tool-host';main.appendChild(host)}
+  host.hidden=false;
+  let frame=host.querySelector('iframe[data-tool-tab="'+S.tab+'"]');
+  if(!frame){
+   frame=document.createElement('iframe');
+   frame.className='admin-tool-frame';frame.dataset.toolTab=S.tab;
+   frame.title=label;frame.loading='eager';frame.referrerPolicy='same-origin';frame.src=src;
+   host.appendChild(frame);
+  }
+  host.querySelectorAll('iframe').forEach(f=>{f.style.display=f===frame?'block':'none'});
+  layout.querySelectorAll('.admin-nav').forEach(button=>button.classList.toggle('active',button.dataset.id===S.tab));
+  layout.dataset.activeTab=S.tab;
   return;
+ }
+ // Return to the existing lightweight dashboard without destroying editors.
+ const toolsLayout=root.querySelector('.admin-layout--tool');
+ if(toolsLayout){
+  toolsLayout.classList.remove('admin-layout--tool');
+  const main=toolsLayout.querySelector('.admin-main');
+  main.classList.remove('admin-main--tool');
+  toolsLayout.querySelector('.admin-head')?.removeAttribute('hidden');
+  toolsLayout.querySelector('#adminPanel')?.removeAttribute('hidden');
+  const host=main.querySelector('.admin-tool-host');
+  if(host)host.hidden=true;
  }
  // Change only the right-hand panel. Destroying the whole admin tree on
  // every click used to discard and decode dozens of large thumbnails again.
