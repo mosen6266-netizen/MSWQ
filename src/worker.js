@@ -696,7 +696,7 @@ async function handler(req,env){
   const limit=/\.(?:mp4|webm)$/i.test(path)?50000000:35000000;
   if(Number(req.headers.get('content-length')||0)>limit)return fail('单个工具文件超过上传限制',413);
   const bytes=await req.arrayBuffer();
-  if(!bytes.byteLength||bytes.byteLength>limit)return fail('工具文件不能为空，且最大不超过 '+Math.round(limit/1000000)+'MB',413);
+  if(bytes.byteLength>limit)return fail('单个工具文件超过 '+Math.round(limit/1000000)+'MB',413);
   const key=htmlPackageFileKey(id,version,path);
   await env.FILES.put(key,bytes,{httpMetadata:{contentType:htmlPackageMime(path)}});
   return out({ok:true,path,size:bytes.byteLength});
@@ -721,7 +721,7 @@ async function handler(req,env){
   const manifestFiles={},used=new Set();let total=0;
   for(const f of body.files){
    const path=htmlPackagePath(f.path),size=Number(f.size);
-   if(!path||used.has(path.toLowerCase())||!Number.isSafeInteger(size)||size<=0||size>50000000)return fail('工具包中包含重复或非法文件路径',400);
+   if(!path||used.has(path.toLowerCase())||!Number.isSafeInteger(size)||size<0||size>50000000)return fail('工具包中包含重复或非法文件路径',400);
    used.add(path.toLowerCase());
    const key=htmlPackageFileKey(id,version,path),obj=await env.FILES.head(key);
    if(!obj||obj.size!==size)return fail('文件缺失或上传不完整: '+path,409);
