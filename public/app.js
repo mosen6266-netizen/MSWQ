@@ -787,6 +787,32 @@ case 'retry-bookmarks':{
   const panel=$('#adminPanel');if(panel)panel.innerHTML=adminPanel();else adminRender();
   break;
  }
+ case 'add-subgroup':{
+  const name=($('#subgroupNewName')?.value||'').trim(),category=S.subgroupParent;
+  if(!name)return toast('请输入子分组名称');
+  if(name.length>40)return toast('名称不能超过 40 字');
+  await saveSubgroups([...(S.settings.subgroups||[]),{id:crypto.randomUUID(),category,name}],'子分组已创建');break;
+ }
+ case 'rename-subgroup':{
+  const list=S.settings.subgroups||[],old=list.find(g=>g.id===id);
+  if(!old)break;
+  const name=prompt('修改子分组名称',old.name)?.trim();
+  if(!name||name===old.name)break;
+  await saveSubgroups(list.map(g=>g.id===id?{...g,name}:g),'子分组名称已更新');break;
+ }
+ case 'delete-subgroup':{
+  const list=S.settings.subgroups||[],old=list.find(g=>g.id===id);
+  if(!old||!confirm('删除子分组「'+old.name+'」？组内卡片不会删除，会进入未分组区域。'))break;
+  await saveSubgroups(list.filter(g=>g.id!==id),'子分组已删除，原卡片保留');break;
+ }
+ case 'move-subgroup':{
+  const all=[...(S.settings.subgroups||[])],idx=all.findIndex(g=>g.id===id);
+  if(idx<0)break;
+  const same=all.map((g,i)=>({g,i})).filter(x=>x.g.category===all[idx].category),pos=same.findIndex(x=>x.i===idx),target=same[pos+Number(el.dataset.dir)];
+  if(!target)break;
+  [all[idx],all[target.i]]=[all[target.i],all[idx]];
+  await saveSubgroups(all,'子分组顺序已保存');break;
+ }
  case 'move-content':await reorderContent(id,null,Number(el.dataset.dir));break;
  case 'tab':{
   S.tab=id;S.edit=null;
@@ -983,11 +1009,22 @@ case 'retry-bookmarks':{
   S.picking=null;closeModal();adminRender();break;
  case 'close-modal':closeModal();break;
  case 'copy-asset':await navigator.clipboard.writeText(location.origin+asset(id));toast('素材链接已复制');break;
+ case 'pick-cover':{
+  await loadAssets();
+  const imgs=S.assets.filter(a=>a.mime?.startsWith('image/'));
+  openModal('<h2>选择卡片封面 / 图标</h2><p class="muted small">选择之后请保存卡片，前台会使用这张图片。</p>'+
+    (imgs.length?'<div class="icon-picker-grid">'+imgs.map(a=>'<button type="button" class="icon-picker-item" data-action="select-cover" data-id="'+a.id+'"><img src="'+asset(a.id)+'" loading="lazy" alt=""><span>'+esc(a.name)+'</span></button>').join('')+'</div>':'<div class="empty">图标库还没有图片。可以在编辑页面直接上传，或去左侧「图标管理」。</div>')+
+    '<div class="flex end" style="margin-top:12px"><button class="btn" data-action="close-modal">取消</button></div>');
+  break;
+ }
+ case 'select-cover':if(S.edit){S.edit.thumbnail=asset(id);closeModal();adminRender();toast('封面已选择，请点击保存');}break;
+ case 'clear-cover':if(S.edit){S.edit.thumbnail='';adminRender();}break;
  case 'copy-html-asset':await navigator.clipboard.writeText(htmlUrl(id));toast('HTML 直达链接已复制');break;
  case 'delete-asset':
   if(!confirm('确认删除这个文件？'))return;
   await api('/api/admin/assets/'+id,{method:'DELETE'});await loadAssets();adminRender();toast('文件已删除');break;
  case 'upload-assets':await uploadAssets();break;
+ case 'upload-icons':await uploadIcons();break;
  case 'save-settings':{
   const data=await api('/api/admin/settings',{method:'PUT',...jsonBody(S.settings)});
   S.settings=data.settings;adminRender();toast('首页设置已保存');break;
@@ -1033,6 +1070,23 @@ async function saveCurrent(publish){
  const opts={method:isUpdate?'PUT':'POST',...jsonBody(item)};
  const res=await api('/api/admin/items'+(isUpdate?'/'+item.id:''),opts);
  S.edit=res.item;await loadAdmin();adminRender();toast(publish?'已发布，公开页面立即生效':'内容已保存');
+}
+async function saveSubgroups(next,message){
+ const data=await api('/api/admin/settings',{method:'PUT',...jsonBody({subgroups:next})});
+ S.settings=data.settings;adminRender();toast(message||'子分组已保存，前台已同步');
+}
+async function uploadIcons(){
+ const files=[...($('#iconUpload')?.files||[])];
+ if(!files.length)return toast('请先选择图片');
+ const allowed={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp'};
+ let count=0;
+ for(const f of files){
+  const mime=allowed[f.name.split('.').pop().toLowerCase()];
+  if(!mime||f.size>12000000||!f.size){toast('跳过不支持或超过12MB的图片：'+f.name);continue}
+  await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(f.name)},body:await f.arrayBuffer()});
+  count++;
+ }
+ await loadAssets();adminRender();toast('成功上传 '+count+' 张图片');
 }
 async function uploadAssets(){
  const input=$('#assetUpload'),files=[...(input?.files||[])];
@@ -1148,7 +1202,7 @@ document.addEventListener('input',e=>{
   else if(key==='memberNames'){
    const names=t.value.split(/[\n,，]/).map(x=>x.trim()).filter(Boolean);
    S.edit.content.members=names.map((name,i)=>({id:S.edit.content.members.find(m=>m.name===name)?.id||crypto.randomUUID(),name,label:(i+1)+'号'}));
-  }else if(['docUrl','templateId','url','htmlAssetId'].includes(key))S.edit.content[key]=t.value;
+  }else if(['docUrl','templateId','url','htmlAssetId','subgroupId'].includes(key))S.edit.content[key]=t.value;
   else S.edit[key]=t.value;
  }
  if(t.dataset.block!==undefined&&S.edit){
@@ -1158,6 +1212,7 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',async e=>{
  const t=e.target;
+ if(t.id==='subgroupParent'){S.subgroupParent=t.value;adminRender();return;}
  if(t.id==='quickDocxCategory'){
   const box=$('#quickDocxNewCategoryBox');
   if(box){box.style.display=t.value==='__new_category__'?'block':'none';if(t.value==='__new_category__')$('#quickDocxNewCategoryName')?.focus()}
@@ -1171,6 +1226,17 @@ document.addEventListener('change',async e=>{
   S.settings.custom_types=created.custom_types;S.settings.type_order=created.type_order;applyCustomTypes(S.settings);
   S.edit.category=created.type.id;
   adminRender();return;
+ }
+ if(t.id==='coverUpload'&&S.edit){
+  const file=t.files?.[0];if(!file)return;
+  const mime={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif'}[file.name.split('.').pop().toLowerCase()];
+  if(!mime||!file.size||file.size>12000000)return toast('封面只支持 PNG、JPG、WebP、GIF，最大12MB');
+  t.disabled=true;
+  try{
+   const res=await api('/api/admin/assets',{method:'POST',headers:{'content-type':mime,'x-file-name':encodeURIComponent(file.name)},body:await file.arrayBuffer()});
+   S.edit.thumbnail=asset(res.asset.id);await loadAssets();adminRender();toast('图片已上传并选用，请保存内容');
+  }catch(err){t.disabled=false;toast('封面上传失败：'+err.message)}
+  return;
  }
  if(t.dataset.mediaUpload){
   const collection=t.dataset.mediaUpload,media=t.dataset.mediaKind==='video'?'video':'image',index=Number(t.dataset.index),file=t.files?.[0];
@@ -1199,6 +1265,11 @@ document.addEventListener('change',async e=>{
   }catch(err){t.disabled=false;toast('HTML 上传失败：'+err.message);}
   return;
  }
+ if(t.dataset.field==='category'&&S.edit&&t.tagName==='SELECT'&&t.value!=='__new_category__'){
+  S.edit.category=t.value;
+  if(!subgroupsFor(frontTabForItem(S.edit)).some(g=>g.id===S.edit.content?.subgroupId))S.edit.content.subgroupId='';
+  adminRender();return;
+ }
  if(t.dataset.field==='htmlAssetId'&&S.edit?.kind==='html'){S.edit.content.htmlAssetId=t.value;return;}
  if(t.dataset.profileIndex!==undefined&&t.dataset.prop==='type'&&S.edit?.kind==='profile'){
   const entry=S.edit.content.fields?.[Number(t.dataset.profileIndex)];
@@ -1213,6 +1284,7 @@ document.addEventListener('change',async e=>{
    return;
   }
   S.edit.kind=t.value;S.edit.content.blocks=S.edit.content.blocks||[];
+  if(!subgroupsFor(frontTabForItem(S.edit)).some(g=>g.id===S.edit.content.subgroupId))S.edit.content.subgroupId='';
   if(t.value==='document'){await loadDocxTemplates();S.edit.category=S.edit.category||defaultDocxCategory();}
   adminRender();
  }
