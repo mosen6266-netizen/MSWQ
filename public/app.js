@@ -57,7 +57,7 @@ function orderedCategoryIds(settings){
  return [...new Set([...(settings?.type_order||[]),...keys])].filter(id=>keys.includes(id));
 }
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
-const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',libraryCategory:'all',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null,subgroupParent:'',icons:[],ipAccess:{ips:[],currentIp:'',updatedAt:''}};
+const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],assetsLoaded:false,viewer:null,picking:null,preview:false,returnTab:'library',libraryCategory:'all',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null,subgroupParent:'',icons:[],iconsLoaded:false,ipAccess:{ips:[],currentIp:'',updatedAt:''}};
 let toastTimer;
 // Preserve the already-painted homepage when opening lightweight public cards.
 let homeSnapshot=null;
@@ -901,8 +901,45 @@ function importHtml(){
  '<div class="notice">支持「群剧本」和「个人流程」两种 JSON。导入后默认是草稿，不会直接对外公开。包含的附件会尽可能导入到本站文件库。</div><div class="field" style="margin-top:15px"><label>选择 .json 备份文件</label><input type="file" id="importFile" accept=".json,application/json"></div><button class="btn primary" data-action="import-json">导入到草稿库</button><hr style="border:0;border-top:1px solid #444;margin:25px 0"><h3>平台数据备份</h3><p class="small muted">导出内容、设置和页面结构为 JSON。媒体文件需要另外保留，导出的 JSON 不含媒体二进制内容。</p><button class="btn" data-action="export-all">导出本站完整 JSON</button><p style="margin-top:20px" class="small muted">目前支持的直接导入格式为原版流程备份；本站 JSON 主要用于恢复依据，不提供一键整体恢复。</p>');
 }
 async function refreshPanel(){if(!S.admin)return;await loadAdmin();adminRender()}
-async function loadAssets(){const x=await api('/api/admin/assets');S.assets=x.assets}
-async function loadIcons(){const x=await api('/api/admin/icons');S.icons=x.icons||[]}
+// Small session-local metadata cache; original media remains on R2.
+const mediaState={assets:{stamp:0,pending:null},icons:{stamp:0,pending:null}};
+function restoredMediaList(kind){
+ try{
+  const saved=JSON.parse(sessionStorage.getItem('mswq-admin-media-v3-'+kind)||'null');
+  if(saved&&Array.isArray(saved.rows)&&Date.now()-saved.stamp<120000)return saved;
+ }catch{}
+ return null;
+}
+async function loadMediaList(kind,force=false){
+ const state=mediaState[kind],field=kind==='assets'?'assets':'icons',flag=kind==='assets'?'assetsLoaded':'iconsLoaded';
+ if(!force&&!S[flag]){
+  const cached=restoredMediaList(kind);
+  if(cached){S[field]=cached.rows;S[flag]=true;state.stamp=cached.stamp}
+ }
+ if(!force&&S[flag]){
+  if(Date.now()-state.stamp>45000&&!state.pending)
+   void loadMediaList(kind,true).catch(e=>console.warn('MSWQ media sync:',e.message));
+  return S[field];
+ }
+ if(state.pending)return state.pending;
+ state.pending=(async()=>{
+  const result=await api('/api/admin/'+kind);
+  const rows=Array.isArray(result[kind])?result[kind]:[];
+  const before=JSON.stringify(S[field].map(x=>[x.id,x.size,x.name,x.created_at]));
+  const after=JSON.stringify(rows.map(x=>[x.id,x.size,x.name,x.created_at]));
+  const changed=before!==after;
+  S[field]=rows;S[flag]=true;state.stamp=Date.now();
+  try{sessionStorage.setItem('mswq-admin-media-v3-'+kind,JSON.stringify({stamp:state.stamp,rows}))}catch{}
+  if(changed)discardAdminPanelCache(kind);
+  if(changed&&S.admin&&document.getElementById('adminPanel')&&
+     ((kind==='assets'&&['assets','html-files'].includes(S.tab))||(kind==='icons'&&S.tab==='icons')))
+   adminRender();
+  return rows;
+ })();
+ try{return await state.pending}finally{state.pending=null}
+}
+async function loadAssets(force=false){return loadMediaList('assets',force)}
+async function loadIcons(force=false){return loadMediaList('icons',force)}
 async function loadIpAccess(){const x=await api('/api/admin/ip-access');S.ipAccess=x}
 async function reorderCategory(source,target,step=0){
  const order=orderedCategoryIds(S.settings),from=order.indexOf(source);
@@ -1222,12 +1259,12 @@ case 'retry-bookmarks':{
  case 'copy-html-asset':await navigator.clipboard.writeText(htmlUrl(id));toast('HTML 直达链接已复制');break;
  case 'delete-asset':
   if(!confirm('确认删除这个文件？'))return;
-  await api('/api/admin/assets/'+id,{method:'DELETE'});await loadAssets();adminRender();toast('文件已删除');break;
+  await api('/api/admin/assets/'+id,{method:'DELETE'});await loadAssets(true);adminRender();toast('文件已删除');break;
  case 'copy-icon-url':await navigator.clipboard.writeText(location.origin+icon(id));toast('独立图标链接已复制');break;
  case 'delete-icon':
   if(!confirm('确认删除这张独立图标？「文件素材」中的任何图片都不会受影响。'))break;
   await api('/api/admin/icons/'+encodeURIComponent(id),{method:'DELETE'});
-  await loadIcons();adminRender();toast('仅从独立图标库删除');break;
+  await loadIcons(true);adminRender();toast('仅从独立图标库删除');break;
  case 'open-icon-import':{
   await loadAssets();const imgs=S.assets.filter(a=>a.mime?.startsWith('image/'));
   openModal('<h2>从文件素材复制到图标库</h2><p class="muted small">选中的图片会独立复制一份，两个库删除操作互不影响。</p>'+
@@ -1342,7 +1379,7 @@ async function uploadIcons(){
   if(result.icon?.id)await uploadPreview('icons',result.icon.id,f);
   count++;
  }
- await loadIcons();adminRender();toast('图标库新增 '+count+' 张图片，文件素材未改变');
+ await loadIcons(true);adminRender();toast('图标库新增 '+count+' 张图片，文件素材未改变');
 }
 async function saveAllowedIps(ips){
  const next=await api('/api/admin/ip-access',{method:'PUT',...jsonBody({ips})});
@@ -1361,7 +1398,7 @@ async function uploadAssets(){
   if(result.asset?.id&&mime.startsWith('image/'))await uploadPreview('assets',result.asset.id,file);
   success++;
  }
- await loadAssets();adminRender();toast('成功上传 '+success+' 个文件');
+ await loadAssets(true);adminRender();toast('成功上传 '+success+' 个文件');
 }
 async function importJSON(){
  const file=$('#importFile')?.files?.[0];if(!file)return toast('请选择 JSON 文件');
