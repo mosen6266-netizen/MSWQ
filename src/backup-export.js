@@ -179,12 +179,24 @@ async function mswqFullBackupResponse(env){
  const all=await mswqBackupInventory(env);
  const sourceRepo=/^[\w.-]+\/[\w.-]+$/.test(String(env.MSWQ_BACKUP_GITHUB_REPO||''))
   ?String(env.MSWQ_BACKUP_GITHUB_REPO):'mosen6266-netizen/MSWQ';
- const sourceUrl='https://codeload.github.com/'+sourceRepo+'/zip/refs/heads/main';
- const github=await fetch(sourceUrl,{
-  headers:{'User-Agent':'MSWQ-Complete-Backup','Accept':'application/zip'},
-  redirect:'follow'
- });
- if(!github.ok||!github.body)throw Error('GitHub 源码归档无法读取（HTTP '+github.status+'），备份已取消');
+ // Bundle the exact deployed source files, avoiding an outbound GitHub request.
+ // This is updated on every release by scripts/build-mswq.mjs.
+ if(typeof MSWQ_BACKUP_SOURCE_EXTRAS==='undefined')throw Error('完整源码快照未嵌入，本次备份已取消');
+ const sourceFiles={...MSWQ_BACKUP_SOURCE_EXTRAS};
+ const assetPaths={
+  html:'public/index.html',js:'public/app.js',css:'public/app.css',
+  personalSwitch:'public/personal-switch.js',bridge:'public/legacy-bridge.js',
+  legacy:'legacy/flow-editor.html',docx:'legacy/docx-public.html',
+  packageUpload:'public/package-upload.js',packageUI:'public/html-package-ui.js'
+ };
+ for(const [asset,path] of Object.entries(assetPaths)){
+  if(typeof ASSETS[asset]!=='string')throw Error('源码资产缺失：'+asset);
+  sourceFiles[path]=ASSETS[asset];
+ }
+ const sourceArchiveEntries=Object.entries(sourceFiles)
+  .sort(([a],[b])=>a.localeCompare(b))
+  .map(([name,content])=>mswqTextEntry(name,content));
+ if(sourceArchiveEntries.length<15)throw Error('源码文件列表不完整，本次备份已取消');
  const today=new Date().toISOString();
  const manifest={
   format:'mswq-full-migration-v1',createdAt:today,
@@ -202,7 +214,7 @@ async function mswqFullBackupResponse(env){
   mswqJsonEntry('d1/docx/schema.json',all.docx.schema),
   mswqJsonEntry('r2/index.json',all.r2),
   mswqJsonEntry('kv/index.json',all.kv),
-  {name:'sources/MSWQ-github.zip',parts:()=>mswqReadable(github.body)}
+  {name:'sources/MSWQ-github.zip',parts:()=>mswqZipEntries(sourceArchiveEntries)}
  ];
  for(const [dbName,db,info] of [
   ['main',env.DB,all.main],['docx',env.DOCX_DB,all.docx]
@@ -220,6 +232,8 @@ async function mswqFullBackupResponse(env){
    parts:async function*(){
     const object=await env.FILES.get(file.key);
     if(!object)throw Error('备份中对象丢失: '+file.key);
+    if(object.etag!==file.etag||object.size!==file.size)
+     throw Error('备份期间文件发生变化，请在停止编辑后重新打包：'+file.key);
     yield* mswqReadable(object.body);
    }
   });
