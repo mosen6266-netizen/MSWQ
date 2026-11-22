@@ -808,15 +808,39 @@ async function reorderContent(source,target,step=0){
  const current=S.items.find(item=>item.id===source);
  if(!current)return toast('内容已更新，请刷新后重试');
  const category=frontTabForItem(current),items=S.items.filter(item=>frontTabForItem(item)===category);
- const order=items.map(item=>item.id),from=order.indexOf(source),to=target?order.indexOf(target):from+step;
- if(from<0||to<0||to>=order.length||from===to)return;
- order.splice(from,1);order.splice(to,0,source);
+ const allowed=new Set(subgroupsFor(category).map(g=>g.id));
+ const scopeFor=x=>allowed.has(x.subgroupId)?x.subgroupId:'';
+ const scope=scopeFor(current),subset=items.filter(x=>scopeFor(x)===scope);
+ const groupIds=subset.map(x=>x.id),from=groupIds.indexOf(source),to=target?groupIds.indexOf(target):from+step;
+ if(from<0||to<0||to>=groupIds.length||from===to)return;
+ groupIds.splice(from,1);groupIds.splice(to,0,source);
+ // Preserve other subgroups' slots; only reorder within the chosen group.
+ const order=items.map(item=>item.id);
+ const targetSlots=items.map((item,i)=>scopeFor(item)===scope?i:-1).filter(i=>i>=0);
+ targetSlots.forEach((index,i)=>{order[index]=groupIds[i]});
  const versions=Object.fromEntries(items.map(item=>[item.id,item.version]));
  await api('/api/admin/items/order',{method:'PUT',...jsonBody({category,order,versions})});
  await loadAdmin();
- const panel=$('#adminPanel');
- if(panel)panel.innerHTML=adminPanel();else adminRender();
- toast('排序已保存，前台显示顺序已同步');
+ const panel=$('#adminPanel');if(panel)panel.innerHTML=adminPanel();else adminRender();
+ toast('组内排序已保存，前台已同步');
+}
+async function assignContentSubgroup(id,category,targetSubgroup){
+ if(S.search.trim())return toast('请先清空搜索后移动工具');
+ const current=S.items.find(item=>item.id===id);
+ if(!current||frontTabForItem(current)!==category)throw Error('只能在同一主分类内移动工具');
+ const allowed=new Set(subgroupsFor(category).map(g=>g.id));
+ if(targetSubgroup&&!allowed.has(targetSubgroup))throw Error('目标子分组已不存在，请刷新页面');
+ const existing=current.subgroupId||'';
+ if(existing===targetSubgroup)return;
+ await api('/api/admin/items/subgroup',{method:'PUT',...jsonBody({
+  itemId:id,subgroupId:targetSubgroup,expectedSubgroupId:existing
+ })});
+ // Replace only the content area; keep the current tab, page position and links.
+ const scroller=document.querySelector('.admin-main'),scrollTop=scroller?.scrollTop||0;
+ await loadAdmin();
+ const panel=$('#adminPanel');if(panel)panel.innerHTML=adminPanel();else adminRender();
+ if(scroller)scroller.scrollTop=scrollTop;
+ toast('工具已移入'+(targetSubgroup?'「'+subgroupTitle(targetSubgroup)+'」':'「其他内容」')+'，前台同步更新');
 }
 async function perform(action,id,el){
  switch(action){
@@ -1228,26 +1252,49 @@ document.addEventListener('dragstart',e=>{
  const row=e.target.closest('[data-content-row]');
  if(S.tab!=='library'||!row||!row.draggable||e.target.closest('button,input,a,select'))return;
  draggedContent=row.dataset.contentRow;draggedContentGroup=row.dataset.contentGroup;
- if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedContent);}
+ if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedContent)}
  row.classList.add('library-dragging');
+ document.body.classList.add('library-is-dragging');
 });
 document.addEventListener('dragover',e=>{
- const row=e.target.closest('[data-content-row]');
- if(S.tab!=='library'||!draggedContent||!row||row.dataset.contentGroup!==draggedContentGroup)return;
- e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='move';
- document.querySelectorAll('.library-drop-target').forEach(x=>x.classList.remove('library-drop-target'));
- if(row.dataset.contentRow!==draggedContent)row.classList.add('library-drop-target');
+ if(S.tab!=='library'||!draggedContent)return;
+ const row=e.target.closest('[data-content-row]'),zone=e.target.closest('[data-subgroup-zone]');
+ const category=zone?.dataset.zoneCategory||row?.dataset.contentGroup;
+ if(!category||category!==draggedContentGroup)return;
+ e.preventDefault();
+ if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+ document.querySelectorAll('.library-drop-target,.library-zone-drop-target').forEach(el=>
+  el.classList.remove('library-drop-target','library-zone-drop-target'));
+ const source=S.items.find(x=>x.id===draggedContent),sourceScope=source?.subgroupId||'';
+ const targetScope=zone?.dataset.zoneSubgroup??row?.dataset.contentSubgroup??'';
+ if(zone&&sourceScope!==targetScope)zone.classList.add('library-zone-drop-target');
+ else if(row&&row.dataset.contentRow!==draggedContent)row.classList.add('library-drop-target');
+ else if(zone)zone.classList.add('library-zone-drop-target');
 });
 document.addEventListener('drop',async e=>{
- const row=e.target.closest('[data-content-row]'),source=draggedContent,group=draggedContentGroup;
+ if(S.tab!=='library'||!draggedContent)return;
+ const row=e.target.closest('[data-content-row]'),zone=e.target.closest('[data-subgroup-zone]');
+ const source=draggedContent,category=draggedContentGroup;
+ const destinationCategory=zone?.dataset.zoneCategory||row?.dataset.contentGroup;
+ const targetSubgroup=zone?.dataset.zoneSubgroup??row?.dataset.contentSubgroup??'';
  draggedContent='';draggedContentGroup='';
- document.querySelectorAll('.library-drop-target,.library-dragging').forEach(x=>x.classList.remove('library-drop-target','library-dragging'));
- if(S.tab!=='library'||!row||!source||row.dataset.contentGroup!==group)return;
- e.preventDefault();try{await reorderContent(source,row.dataset.contentRow);}catch(err){toast('排序失败：'+err.message)}
+ document.body.classList.remove('library-is-dragging');
+ document.querySelectorAll('.library-drop-target,.library-zone-drop-target,.library-dragging').forEach(x=>
+  x.classList.remove('library-drop-target','library-zone-drop-target','library-dragging'));
+ if(!destinationCategory||destinationCategory!==category)return;
+ e.preventDefault();
+ const current=S.items.find(x=>x.id===source),allowed=new Set(subgroupsFor(category).map(g=>g.id));
+ const sourceScope=current&&allowed.has(current.subgroupId)?current.subgroupId:'';
+ try{
+  if(sourceScope!==targetSubgroup)await assignContentSubgroup(source,category,targetSubgroup);
+  else if(row&&row.dataset.contentRow!==source)await reorderContent(source,row.dataset.contentRow);
+ }catch(err){console.error(err);toast('移动失败：'+err.message)}
 });
 document.addEventListener('dragend',()=>{
  draggedContent='';draggedContentGroup='';
- document.querySelectorAll('.library-drop-target,.library-dragging').forEach(x=>x.classList.remove('library-drop-target','library-dragging'));
+ document.body.classList.remove('library-is-dragging');
+ document.querySelectorAll('.library-drop-target,.library-zone-drop-target,.library-dragging').forEach(x=>
+  x.classList.remove('library-drop-target','library-zone-drop-target','library-dragging'));
 });
 document.addEventListener('dragstart',e=>{
  const row=e.target.closest('[data-category-row]');
