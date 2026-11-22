@@ -391,7 +391,7 @@ function libraryHtml(){
  const tabs=libraryTabIds();
  if(S.libraryCategory!=='all'&&!tabs.includes(S.libraryCategory))S.libraryCategory='all';
  const selected=S.libraryCategory,query=S.search.trim().toLocaleLowerCase(),sortingDisabled=!!query;
- const matches=x=>!query||[x.title,x.slug,x.description,x.category,typeNames[x.kind],typeNames[frontTabForItem(x)],(x.tags||[]).join(' ')]
+ const matches=x=>!query||[x.title,x.slug,x.description,x.category,typeNames[x.kind],typeNames[frontTabForItem(x)],subgroupTitle(x.subgroupId),(x.tags||[]).join(' ')]
   .some(value=>String(value||'').toLocaleLowerCase().includes(query));
  const counts=Object.fromEntries(tabs.map(id=>[id,S.items.filter(x=>frontTabForItem(x)===id).length]));
  const filters='<div class="library-tabs"><button type="button" class="library-tab '+(selected==='all'?'active':'')+'" data-action="library-filter" data-id="all" aria-pressed="'+(selected==='all')+'">全部分组 <span>'+S.items.length+'</span></button>'+
@@ -400,36 +400,52 @@ function libraryHtml(){
  const groups=tabs.filter(id=>selected==='all'||id===selected).map(id=>{
   const all=S.items.filter(item=>frontTabForItem(item)===id),visible=all.filter(matches);
   if(!visible.length&&selected==='all')return '';
-  const rows=visible.map(x=>{
-   const index=all.findIndex(item=>item.id===x.id),canSort=!sortingDisabled&&all.length>1;
-   return '<tr class="library-sort-row" draggable="'+canSort+'" data-content-row="'+esc(x.id)+'" data-content-group="'+esc(id)+'">'+
-    '<td class="library-sort-cell"><span class="library-grip" title="拖动调整排序">⠿</span><span class="library-index">'+(index+1)+'</span></td>'+
-    '<td><strong>'+esc(x.title)+'</strong><div class="tiny muted truncate">/view/'+esc(x.slug)+'</div></td>'+
-    '<td><span class="library-tab-label">'+esc(typeNames[id]||id)+'</span></td>'+
-    '<td class="small muted">'+esc(x.kind==='html'?'HTML 文件':(typeNames[x.kind]||x.kind))+'</td>'+
-    '<td><span class="pill '+esc(x.status)+'">'+(x.status==='published'?'已发布':'草稿')+'</span></td>'+
-    '<td class="library-row-actions"><div class="actions">'+
-     '<button class="btn sm" data-action="move-content" data-id="'+esc(x.id)+'" data-dir="-1" title="上移" '+(!canSort||index===0?'disabled':'')+'>↑</button>'+
-     '<button class="btn sm" data-action="move-content" data-id="'+esc(x.id)+'" data-dir="1" title="下移" '+(!canSort||index===all.length-1?'disabled':'')+'>↓</button>'+
-     '<button class="btn sm" data-action="edit-item" data-id="'+esc(x.id)+'">编辑</button>'+
-     '<button class="btn sm" data-action="copy-url" data-id="'+esc(x.id)+'">链接</button>'+
-     '<button class="btn sm" data-action="quick-status" data-id="'+esc(x.id)+'">'+(x.status==='published'?'下架':'发布')+'</button>'+
-    '</div></td></tr>';
-  }).join('');
+  const subgroups=subgroupsFor(id),known=new Set(subgroups.map(g=>g.id));
+  const scopeFor=item=>known.has(item.subgroupId)?item.subgroupId:'';
+  const renderRows=members=>{
+   return members.map(x=>{
+    const scope=scopeFor(x),scopeItems=all.filter(it=>scopeFor(it)===scope),index=scopeItems.findIndex(it=>it.id===x.id);
+    const canSort=!sortingDisabled&&scopeItems.length>1,canDrag=!sortingDisabled&&(canSort||subgroups.length>0);
+    return '<tr class="library-sort-row" draggable="'+canDrag+'" data-content-row="'+esc(x.id)+'" data-content-group="'+esc(id)+'" data-content-subgroup="'+esc(scope)+'">'+
+     '<td class="library-sort-cell"><span class="library-grip" title="拖动到目标子分组或同组其他位置">⠿</span><span class="library-index">'+(index+1)+'</span></td>'+
+     '<td><strong>'+esc(x.title)+'</strong><div class="tiny muted truncate">/view/'+esc(x.slug)+'</div></td>'+
+     '<td><span class="library-tab-label">'+esc(typeNames[id]||id)+'</span></td>'+
+     '<td class="small muted">'+esc(x.kind==='html'?'HTML 文件':(typeNames[x.kind]||x.kind))+'</td>'+
+     '<td><span class="pill '+esc(x.status)+'">'+(x.status==='published'?'已发布':'草稿')+'</span></td>'+
+     '<td class="library-row-actions"><div class="actions">'+
+      '<button class="btn sm" data-action="move-content" data-id="'+esc(x.id)+'" data-dir="-1" title="上移" '+(!canSort||index===0?'disabled':'')+'>↑</button>'+
+      '<button class="btn sm" data-action="move-content" data-id="'+esc(x.id)+'" data-dir="1" title="下移" '+(!canSort||index===scopeItems.length-1?'disabled':'')+'>↓</button>'+
+      '<button class="btn sm" data-action="edit-item" data-id="'+esc(x.id)+'">编辑</button>'+
+      '<button class="btn sm" data-action="copy-url" data-id="'+esc(x.id)+'">链接</button>'+
+      '<button class="btn sm" data-action="quick-status" data-id="'+esc(x.id)+'">'+(x.status==='published'?'下架':'发布')+'</button>'+
+     '</div></td></tr>';
+   }).join('');
+  };
+  const table=rows=>'<div class="library-table-wrap"><table class="admin-table library-table"><thead><tr><th>拖动</th><th>标题 / 路径</th><th>所在标签页</th><th>内容形式</th><th>状态</th><th class="library-action-heading">排序 / 操作</th></tr></thead><tbody>'+renderRows(rows)+'</tbody></table></div>';
+  const bySubgroups=subgroups.length?
+   [...subgroups.map(g=>({id:g.id,name:g.name})),{id:'',name:'其他内容（未分组）'}].map(g=>{
+    const groupAll=all.filter(x=>scopeFor(x)===g.id),groupVisible=groupAll.filter(matches);
+    return '<section class="library-subgroup-zone" data-subgroup-zone data-zone-category="'+esc(id)+'" data-zone-subgroup="'+esc(g.id)+'">'+
+     '<div class="library-subgroup-title"><div><span class="library-subgroup-folder">▤</span><strong>'+esc(g.name)+'</strong>'+
+     '<span class="library-subgroup-number">'+groupAll.length+' 个工具</span></div>'+
+     (!sortingDisabled?'<span class="library-subgroup-hint">拖到这里自动归入此组</span>':'')+'</div>'+
+     (groupVisible.length?table(groupVisible):'<div class="library-subgroup-empty">'+(sortingDisabled?'当前没有匹配内容':'拖拽工具到这里，即可移动到「'+esc(g.name)+'」')+'</div>')+
+     '</section>';
+   }).join(''):(visible.length?table(visible):'<div class="empty">该标签下没有匹配的内容</div>');
   const published=all.filter(x=>x.status==='published').length;
   return '<section class="library-group" data-library-group="'+esc(id)+'">'+
    '<div class="library-group-head"><div><h3>'+esc(typeNames[id]||id)+'</h3><p>前台标签页 · '+published+' 条已发布 / 共 '+all.length+' 条'+
    ((S.settings?.deleted_types||[]).includes(id)?' · 分类已删除，原内容保留':(S.settings?.hidden_types||[]).includes(id)?' · 前台已隐藏':'')+'</p></div>'+
    '<span class="library-group-count">'+all.length+' 条</span></div>'+
-   (visible.length?'<div class="library-table-wrap"><table class="admin-table library-table"><thead><tr><th>顺序</th><th>标题 / 路径</th><th>所在标签页</th><th>内容形式</th><th>状态</th><th class="library-action-heading">排序 / 操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>':
-    '<div class="empty">该标签下没有匹配的内容</div>')+'</section>';
+   (subgroups.length?'<p class="library-group-help">子分组支持直接拖拽：拖动任意一行到下方分区，不用进入编辑。</p>':'')+
+   bySubgroups+'</section>';
  }).join('');
- return row('按前台标签页管理内容','每条内容显示所属标签页；同一标签内支持拖动、上移、下移排序，保存后同步前台。',
-  '<div class="library-toolbar"><input id="adminSearch" class="input" placeholder="搜索内容名称、标签页、路径…" value="'+esc(S.search)+'" autocomplete="off">'+
-  '<span class="muted small">内容类型与前台标签分开显示，排序不会改变内容或直达链接。</span></div>'+
+ return row('按前台标签页管理内容','在主分类下直接拖拽工具到任何子分组，松手自动保存；也可拖动同组工具调整先后顺序。',
+  '<div class="library-toolbar"><input id="adminSearch" class="input" placeholder="搜索内容名称、子分组、标签页、路径…" value="'+esc(S.search)+'" autocomplete="off">'+
+  '<span class="muted small">拖动行首 ⠿ 到目标区域，不修改工具的原始内容和分享链接。</span></div>'+
   filters+
-  (sortingDisabled?'<p class="library-sort-note">搜索结果中暂不支持排序，清空搜索即可拖动调整。</p>':
-    '<p class="library-sort-note">拖动左侧 ⠿ 所在行，或使用 ↑ ↓；标签页之间的排序请在「分类管理」中调整。</p>')+
+  (sortingDisabled?'<p class="library-sort-note">搜索时暂时禁止拖拽，清空搜索后可以移动到任意子分组。</p>':
+   '<p class="library-sort-note">直接拖拽即可移动工具到子分组，包括空分组；组内也可拖动排序。需要新增分组请到「分类管理」。</p>')+
   (groups||'<div class="empty">暂无内容</div>'));
 }
 async function loadDocxTemplates(force=false){
