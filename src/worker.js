@@ -471,13 +471,39 @@ async function handler(req,env){
    const exact=await env.FILES.get('published-readers/'+item.id+'.html');
    if(exact){
     const signature=base64url(await digest(item.title+'\0'+item.content));
-    if(exact.customMetadata?.signature===signature&&exact.customMetadata?.kind===item.kind){
+    let validExport=exact.customMetadata?.signature===signature&&exact.customMetadata?.kind===item.kind;
+    // Renaming a card or changing its subgroup must not invalidate an unchanged
+    // original HTML export. Validate the historic signed version AND require the
+    // exported content to match the current functional content exactly.
+    if(!validExport&&exact.customMetadata?.kind===item.kind){
+     const storedVersion=Number(exact.customMetadata.version);
+     if(Number.isSafeInteger(storedVersion)&&storedVersion>0&&storedVersion<item.version){
+      const previous=await env.DB.prepare(
+       'SELECT data FROM revisions WHERE item_id=? AND version=? ORDER BY created_at DESC LIMIT 1'
+      ).bind(item.id,storedVersion).first();
+      if(previous?.data){
+       try{
+        const original=JSON.parse(previous.data);
+        const currentContent=JSON.parse(item.content||'{}');
+        const before={...(original.content||{})},after={...currentContent};
+        // subgroupId is a card-display property; never part of the flow script.
+        delete before.subgroupId;delete after.subgroupId;
+        validExport=original.kind===item.kind&&
+          JSON.stringify(before)===JSON.stringify(after)&&
+          base64url(await digest(original.title+'\0'+JSON.stringify(original.content||{})))===exact.customMetadata.signature;
+       }catch{validExport=false}
+      }
+     }
+    }
+    if(validExport){
      const fast=item.kind==='personal'&&url.searchParams.get('fast')==='1';
      const embedded=fast&&url.searchParams.get('embedded')==='1';
      // Only signed/versioned navigation URLs are cacheable. An updated item
      // receives a new versioned URL, so buttons immediately show new content.
      const stableVersion=fast&&url.searchParams.get('v')===String(item.version);
-     const cachePolicy='no-store';
+     // Browser-only caching with mandatory revalidation: this must never be
+     // cached by a shared CDN, and the Worker IP access gate still runs first.
+     const cachePolicy='private, no-cache';
      const etag='"mswq-'+item.id+'-'+String(exact.etag||'')+'-'+String(item.version)+'-'+(fast?'fast':'full')+'"';
      const headers={
       'content-type':'text/html; charset=utf-8','cache-control':cachePolicy,
@@ -487,7 +513,7 @@ async function handler(req,env){
        ?"default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src 'self' data: blob:; prefetch-src 'self'; frame-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
        :"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; media-src data: blob: https:; font-src 'self' data:; connect-src data: blob:; frame-src data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
      };
-     if(item.kind==='personal'&&req.headers.get('if-none-match')?.split(',').map(x=>x.trim()).includes(etag)){
+     if(req.headers.get('if-none-match')?.split(',').map(x=>x.trim()).includes(etag)){
       return new Response(null,{status:304,headers});
      }
      if(embedded)headers['content-security-policy']=headers['content-security-policy'].replace("frame-ancestors 'none'","frame-ancestors 'self'");
