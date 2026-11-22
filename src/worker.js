@@ -748,6 +748,25 @@ async function handler(req,env){
   await env.FILES.put(htmlPackageManifestKey(id),JSON.stringify(manifest),{httpMetadata:{contentType:'application/json'}});
   return out({ok:true,id,entry,totalSize:total,count:body.files.length,url:htmlAssetLink(id),replaced:!!old});
  }
+
+ // Only manifest-listed files of the active version may be downloaded.
+ const packageFile=p.match(/^\/api\/admin\/html-packages\/([a-f0-9-]{36})\/file$/i);
+ if(packageFile&&method==='GET'&&HTML_PACKAGE_UUID.test(packageFile[1])){
+  const id=packageFile[1],row=await env.DB.prepare('SELECT mime FROM assets WHERE id=?').bind(id).first();
+  if(row?.mime!=='text/html')return fail('HTML 文件不存在',404);
+  const m=await htmlPackageManifest(env,id);
+  if(!m)return fail('该 HTML 没有关联资源文件',404);
+  const filePath=htmlPackagePath(url.searchParams.get('path')||'');
+  if(!filePath||!Object.hasOwn(m.files,filePath))return fail('文件不在工具包清单中',404);
+  const f=m.files[filePath],obj=await env.FILES.get(f.key);
+  if(!obj)return fail('源文件不存在',404);
+  return new Response(obj.body,{headers:{
+   'content-type':'application/octet-stream','x-content-type-options':'nosniff',
+   'content-security-policy':"default-src 'none'; sandbox",
+   'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(filePath.split('/').pop()),
+   'cache-control':'private,no-store','content-length':String(f.size)
+  }});
+ }
  const packageInfo=p.match(/^\/api\/admin\/html-packages\/([a-f0-9-]{36})(?:\/(download))?$/i);
  if(packageInfo&&HTML_PACKAGE_UUID.test(packageInfo[1])&&method==='GET'){
   const id=packageInfo[1],row=await env.DB.prepare('SELECT id,name,mime FROM assets WHERE id=?').bind(id).first();
@@ -765,6 +784,21 @@ async function handler(req,env){
    url:htmlAssetLink(id),files:Object.entries(m.files).map(([path,f])=>({path,size:f.size,mime:f.mime}))});
  }
 
+
+ // Renaming preserves the original asset ID, package bytes and published links.
+ const renameAsset=p.match(/^\/api\/admin\/assets\/([a-f0-9-]{36})$/i);
+ if(renameAsset&&method==='PATCH'&&HTML_PACKAGE_UUID.test(renameAsset[1])){
+  const id=renameAsset[1];
+  const row=await env.DB.prepare('SELECT id,name,mime FROM assets WHERE id=?').bind(id).first();
+  if(!row||row.mime!=='text/html')return fail('HTML 文件不存在',404);
+  const body=await parse(req,2048);
+  let name=cleanString(body.name||'',200).trim();
+  if(!name)return fail('请填写文件名称',400);
+  const m=await htmlPackageManifest(env,id);
+  if(!m&&!/\.html?$/i.test(name))name+=/\.htm$/i.test(row.name)?'.htm':'.html';
+  await env.DB.prepare('UPDATE assets SET name=? WHERE id=?').bind(name,id).run();
+  return out({ok:true,id,name});
+ }
  if(method==='GET'&&p==='/api/admin/assets'){
   const rows=await env.DB.prepare('SELECT * FROM assets ORDER BY created_at DESC LIMIT 500').all();
   return out({ok:true,assets:(rows.results||[]).map(x=>({id:x.id,name:x.name,mime:x.mime,size:x.size,created_at:x.created_at,url:'/api/asset/'+x.id}))});
