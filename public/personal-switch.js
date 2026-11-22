@@ -155,12 +155,12 @@
  }
 
  function schedulePrefetch(){
+  // Do not silently download every other full exported HTML page (some are
+  // nearly 20 MB). Those background transfers can monopolize the connection
+  // and make the active flow feel frozen. Pointer intent below still prefetches
+  // the chosen reader, and previously opened frames stay mounted for fast toggles.
   if(prefetchTimer)clearTimeout(prefetchTimer);
-  prefetchTimer=setTimeout(()=>{
-   if('requestIdleCallback' in window){
-    requestIdleCallback(warmNeighbors,{timeout:3000});
-   }else warmNeighbors();
-  },1200);
+  prefetchTimer=0;
  }
 
  async function sync(){
