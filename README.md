@@ -1,3 +1,13 @@
+## 2026-11-22 · 完整迁移备份（双重验证后台）
+
+- 后台「导入与备份」新增 **下载完整迁移 ZIP**：实时流式导出所有 D1 业务表结构和行、全部 R2 原始对象及 HTTP/自定义 metadata、DOCX KV 原始内容与历史版本，并包含独立 ZIP 源码快照。
+- 备份入口 `GET /api/admin/backup/export` 与检查入口 `GET /api/admin/backup/inventory` 都通过现有密码 + Google TOTP 会话保护。浏览器下载为 ZIP32 STORE 流；超大 HTML、图片、附件不会先整体加载进 Worker 内存。源文件快照从私有 R2 `mswq-private/source-snapshot-v1.json` 获取，不依赖访问 GitHub 网站。
+- 源码部署时必须执行 `node scripts/build-mswq.mjs`，再将 `dist/mswq-source-snapshot.json` 上传至 R2 同名私有 key（新账号部署步骤详见 [REBUILD-MSWQ.md](REBUILD-MSWQ.md)）；在后台新增/修改/删除内容不需要重新部署，重新下载即可得到更新的数据备份。
+- 本仓库包含安全恢复脚本 `scripts/restore-mswq.py`、主站和隔离 HTML Worker 配置模板，**恢复目标必须是新建空资源**。不搬运旧账号密码、Google Authenticator 绑定密钥、Cookie、Cloudflare/GitHub Token。迁移压缩包是私有资料，不得公开上传。
+- 仅改变 MSWQ 的备份出口和文档；原始项目内容与服务绑定保留，其他 Worker 和账号不受影响。
+
+---
+
 ## MSWQ 全局性能治理：后台本地列表缓存 + 独立小缩略图 + 持久页面（2026-11-22）
 
 ### 已部署架构
