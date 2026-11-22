@@ -118,13 +118,27 @@ async function mswqBackupObjects(env){
   cursor=result.truncated?result.cursor:null;
   if(objects.length>100000)throw Error('云文件数量超过备份上限');
  }while(cursor);
- return objects.map((obj,index)=>({
-  key:obj.key,size:obj.size,etag:obj.etag,
-  uploaded:obj.uploaded?.toISOString?.()||String(obj.uploaded||''),
-  httpMetadata:obj.httpMetadata||{},
-  customMetadata:obj.customMetadata||{},
-  zipPath:'r2/objects/'+String(index+1).padStart(6,'0')+'.bin'
- }));
+ // Identical R2 bytes often exist under several different keys. ZIP each
+ // unique immutable body only once, keeping a separate metadata entry for
+ // *every* original object/key so a new account recreates all originals.
+ // R2 ETags and size are used only as a deduplication hint. All object keys
+ // and per-key metadata remain in the index.
+ const stored=new Map();
+ return objects.map(obj=>{
+  const fingerprint=String(obj.etag||'')+':'+String(obj.size);
+  let zipPath=stored.get(fingerprint);
+  if(!zipPath){
+   zipPath='r2/objects/'+String(stored.size+1).padStart(6,'0')+'.bin';
+   stored.set(fingerprint,zipPath);
+  }
+  return {
+   key:obj.key,size:obj.size,etag:obj.etag,
+   uploaded:obj.uploaded?.toISOString?.()||String(obj.uploaded||''),
+   httpMetadata:obj.httpMetadata||{},
+   customMetadata:obj.customMetadata||{},
+   zipPath
+  };
+ });
 }
 async function mswqBackupKvKeys(env){
  let cursor,keys=[];
@@ -206,6 +220,7 @@ async function mswqFullBackupResponse(env){
    r2Objects:all.r2.length,r2Bytes:all.r2.reduce((a,x)=>a+(x.size||0),0),
    kvKeys:all.kv.length},
   sourceArchive:'sources/MSWQ-github.zip',
+  r2DeduplicatedObjects:new Set(all.r2.map(x=>x.zipPath)).size,
   security:'Excluded account credentials and secret values; regenerate in destination'
  };
  const entries=[
@@ -227,7 +242,10 @@ async function mswqFullBackupResponse(env){
    });
   }
  }
+ const storedObjects=new Set();
  for(const file of all.r2){
+  if(storedObjects.has(file.zipPath))continue;
+  storedObjects.add(file.zipPath);
   entries.push({
    name:file.zipPath,
    parts:async function*(){
