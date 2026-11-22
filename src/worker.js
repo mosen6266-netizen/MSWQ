@@ -416,6 +416,7 @@ function publicDocxPage(value){
 /* Separate icon library and enforced public-site IP allowlist.
    Stored under dedicated keys in the existing R2 bucket, never in assets. */
 const ICON_PREFIX='mswq-icons/v1/';
+const THUMB_PREFIX='mswq-thumbnails/v1/';
 const IP_ACCESS_KEY='mswq-private/ip-allowlist-v1.json';
 const IP_UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 function normalizedClientIP(value){
@@ -473,6 +474,34 @@ async function iconFile(env,id,req){
   'content-type':mime,'x-content-type-options':'nosniff','cache-control':cache,'etag':tag,
   'content-disposition':download?'attachment; filename*=UTF-8\''+'\''+encodeURIComponent(object.customMetadata?.name||id+'.png'):'inline'
  }});
+}
+
+// Server-stored small previews. The original R2 objects are never modified.
+// Admin-only route: thumbnails are not exposed through the public IP-gated API.
+async function handleAdminThumbnail(env,req,kind,id){
+ if(!IP_UUID.test(id)||!['assets','icons'].includes(kind))return fail('预览编号无效',400);
+ const img=kind==='icons'?await env.FILES.head(iconKey(id)):
+   await env.DB.prepare('SELECT mime FROM assets WHERE id=?').bind(id).first();
+ if(!img||(kind==='assets'&&!imageMime(img.mime)))return fail('图片素材不存在',404);
+ if(kind==='icons'&&!imageMime(img.httpMetadata?.contentType||''))return fail('图标不存在',404);
+ const key=THUMB_PREFIX+kind+'/'+id+'.webp';
+ if(req.method==='PUT'){
+  if(req.headers.get('content-type')!=='image/webp')return fail('只接受 WebP 缩略图',415);
+  if(Number(req.headers.get('content-length')||0)>300000)return fail('缩略图尺寸超限',413);
+  const bytes=new Uint8Array(await req.arrayBuffer());
+  const sig=new TextDecoder().decode(bytes.slice(0,12));
+  if(bytes.length<32||bytes.length>300000||sig.slice(0,4)!=='RIFF'||sig.slice(8,12)!=='WEBP')return fail('缩略图文件无效',400);
+  await env.FILES.put(key,bytes,{httpMetadata:{contentType:'image/webp'}});
+  return out({ok:true,id,size:bytes.byteLength});
+ }
+ if(!['GET','HEAD'].includes(req.method))return fail('不支持的操作',405);
+ const obj=await env.FILES.get(key);
+ if(!obj)return fail('预览尚未生成',404);
+ const etag='"mswq-thumb-'+id+'-'+String(obj.etag||'')+'"';
+ const headers={'content-type':'image/webp','cache-control':'private, no-cache','etag':etag,'x-content-type-options':'nosniff'};
+ if((req.headers.get('if-none-match')||'').split(',').map(x=>x.trim().replace(/^W\//i,'')).includes(etag))
+  return new Response(null,{status:304,headers});
+ return new Response(req.method==='HEAD'?null:obj.body,{status:200,headers});
 }
 
 async function handler(req,env){
@@ -688,6 +717,8 @@ async function handler(req,env){
   await env.FILES.put(iconKey(id),bytes,{httpMetadata:{contentType:src.mime},customMetadata:{name:src.name,createdAt}});
   return out({ok:true,icon:{id,name:src.name,mime:src.mime,size:bytes.byteLength,created_at:createdAt,url:'/api/icon/'+id}},201);
  }
+ const thumbnail=p.match(/^\/api\/admin\/thumb\/(assets|icons)\/([a-f0-9-]{36})$/i);
+ if(thumbnail)return handleAdminThumbnail(env,req,thumbnail[1],thumbnail[2]);
  const iconAdminFile=p.match(/^\/api\/admin\/icons\/([a-f0-9-]{36})\/file$/i);
  if(iconAdminFile&&['GET','HEAD'].includes(method))return iconFile(env,iconAdminFile[1],req);
  const assetAdminFile=p.match(/^\/api\/admin\/assets\/([a-f0-9-]{36})\/file$/i);
@@ -700,7 +731,7 @@ async function handler(req,env){
   if(!obj)return fail('图标不存在',404);
   const ref=await env.DB.prepare('SELECT id FROM items WHERE thumbnail LIKE ? LIMIT 1').bind('%/api/icon/'+id+'%').first();
   if(ref)return fail('此图标正在被前台卡片使用，请先更换该卡片封面',409);
-  await env.FILES.delete(iconKey(id));
+  await Promise.all([env.FILES.delete(iconKey(id)),env.FILES.delete(THUMB_PREFIX+'icons/'+id+'.webp')]);
   return out({ok:true});
  }
 
@@ -1110,7 +1141,7 @@ async function handler(req,env){
     cursor=listed.truncated?listed.cursor:undefined;
    }while(cursor);
   }
-  await env.FILES.delete(row.key);
+  await Promise.all([env.FILES.delete(row.key),env.FILES.delete(THUMB_PREFIX+'assets/'+id+'.webp')]);
   // Older standalone HTML versions might still exist at the legacy UUID key.
   if(bundle&&row.key!==id)await env.FILES.delete(id);
   await env.DB.prepare('DELETE FROM assets WHERE id=?').bind(id).run();
