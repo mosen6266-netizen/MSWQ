@@ -3,8 +3,8 @@
 const ASSETS = __MSWQ_ASSETS__;
 // MSWQ test adapter operating on shared DOCX D1/KV without modifying original service.
 const DOCX_ADMIN_BACKEND = __MSWQ_DOCX_API__;
-// Temporary development mode. Set to false when MSWQ needs authentication.
-const MSWQ_TEST_OPEN_ADMIN = true;
+// Production admin is never accessible without a password and Google Authenticator TOTP.
+const MSWQ_TEST_OPEN_ADMIN = false;
 const HTML_VIEW_ORIGIN = 'https://mswq-html.mosen6266-ms007.workers.dev';
 const encoder = new TextEncoder();
 const enc = value => encoder.encode(value);
@@ -52,8 +52,38 @@ async function hmac(secret,text){
  const key=await crypto.subtle.importKey('raw',enc(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  return new Uint8Array(await crypto.subtle.sign('HMAC',key,enc(text)));
 }
+// RFC 6238 / Google Authenticator, 6 digits, SHA-1, 30-second window.
+// The shared base32 seed is a Cloudflare Worker secret, never exposed through the site.
+async function googleTotpValid(base32,code){
+ if(!/^\d{6}$/.test(String(code||'')))return false;
+ const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+ const s=String(base32||'').toUpperCase().replace(/[\s=-]/g,'');
+ let accumulator=0,bits=0,bytes=[];
+ for(const char of s){
+  const digit=alphabet.indexOf(char);
+  if(digit<0)return false;
+  accumulator=(accumulator<<5)|digit;bits+=5;
+  if(bits>=8){
+   bits-=8;
+   bytes.push((accumulator>>>bits)&255);
+   accumulator &= (1<<bits)-1;
+  }
+ }
+ if(bytes.length<20)return false;
+ const key=await crypto.subtle.importKey('raw',new Uint8Array(bytes),{name:'HMAC',hash:'SHA-1'},false,['sign']);
+ const tick=Math.floor(Date.now()/30000);
+ for(const offset of [-1,0,1]){
+  const counter=new Uint8Array(8);
+  new DataView(counter.buffer).setUint32(4,tick+offset,false);
+  const signature=new Uint8Array(await crypto.subtle.sign('HMAC',key,counter));
+  const p=signature[signature.length-1]&15;
+  const value=(((signature[p]&127)<<24)|(signature[p+1]<<16)|(signature[p+2]<<8)|signature[p+3])%1000000;
+  if(await sameSecret(String(code),String(value).padStart(6,'0')))return true;
+ }
+ return false;
+}
 async function sessionValid(req,env){
- if(!env.ADMIN_PASSWORD)return false;
+ if(!env.ADMIN_PASSWORD||!env.ADMIN_TOTP_SECRET||!env.SESSION_SECRET)return false;
  const token=(req.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('mswq_session='));
  if(!token)return false;
  const pieces=token.slice(13).split('.');
@@ -61,18 +91,18 @@ async function sessionValid(req,env){
  try{
   const payload=new TextDecoder().decode(fromBase64url(pieces[0]));
   const parsed=JSON.parse(payload);
-  if(!parsed.exp || parsed.exp<Date.now() || parsed.exp>Date.now()+8*86400000)return false;
+  if(!parsed.exp || parsed.exp<Date.now() || parsed.exp>Date.now()+8*3600000)return false;
   const expected=await hmac(env.SESSION_SECRET||env.ADMIN_PASSWORD+':mswq-v1',pieces[0]);
   const received=fromBase64url(pieces[1]);
   return expected.length===received.length&&expected.every((v,i)=>v===received[i]);
  }catch{return false;}
 }
 async function newSession(env){
- const expires=Date.now()+7*86400000;
+ const expires=Date.now()+8*3600000;
  const payload=base64url(enc(JSON.stringify({exp:expires,nonce:crypto.randomUUID()})));
  return payload+'.'+base64url(await hmac(env.SESSION_SECRET||env.ADMIN_PASSWORD+':mswq-v1',payload));
 }
-function cookie(token){return 'mswq_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800';}
+function cookie(token){return 'mswq_session='+token+'; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800';}
 function checkOrigin(req){const origin=req.headers.get('origin');return !origin||origin===new URL(req.url).origin;}
 async function parse(req,limit=550000){
  const raw=await req.text();if(raw.length>limit)throw new Error('数据量过大');
@@ -602,7 +632,7 @@ async function handler(req,env){
   const target=new URL(localPath+url.search,url.origin);
   return DOCX_ADMIN_BACKEND.fetch(new Request(target,{method:'GET'}),{DB:env.DOCX_DB,KHMB:env.DOCX_KV},{});
  }
- if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.3',testMode:MSWQ_TEST_OPEN_ADMIN});
+ if(method==='GET'&&p==='/api/health')return out({ok:true,app:'MSWQ',version:'1.5.3',testMode:false,twoFactor:true});
  if(method==='GET'&&p==='/api/public')return out(await fetchPublic(env));
  if(method==='GET'&&p.startsWith('/api/public/item/')){
   const slug=decodeURIComponent(p.slice('/api/public/item/'.length));
@@ -617,17 +647,18 @@ async function handler(req,env){
  if(method==='POST'&&p==='/api/admin/login'){
   if(MSWQ_TEST_OPEN_ADMIN)return out({ok:true,testMode:true});
   if(!checkOrigin(req))return fail('请求来源不合法',403);
-  if(!env.ADMIN_PASSWORD)return fail('请先在 Cloudflare Worker 中设置 ADMIN_PASSWORD 密钥',503);
+  if(!env.ADMIN_PASSWORD||!env.ADMIN_TOTP_SECRET||!env.SESSION_SECRET)return fail('管理员双重验证配置未就绪，请联系管理员',503);
   const ip=req.headers.get('cf-connecting-ip')||'unknown';
   const ipHash=base64url(await digest('mswq-'+ip));
   let row=await env.DB.prepare('SELECT * FROM login_attempts WHERE ip=?').bind(ipHash).first();
   if(row?.locked_until>Date.now())return fail('尝试次数过多，请稍后重试',429);
   const body=await parse(req,10000);
-  const matched=env.ADMIN_PASSWORD&&await sameSecret(String(body.password||''),env.ADMIN_PASSWORD);
-  if(!matched){
+  const matched=await sameSecret(String(body.password||''),env.ADMIN_PASSWORD);
+  const twoFactor=matched&&await googleTotpValid(env.ADMIN_TOTP_SECRET,body.code);
+  if(!matched||!twoFactor){
    const failures=(row?.failures||0)+1, lock=failures>=8?Date.now()+15*60000:0;
    await env.DB.prepare('INSERT INTO login_attempts(ip,failures,locked_until) VALUES(?,?,?) ON CONFLICT(ip) DO UPDATE SET failures=excluded.failures,locked_until=excluded.locked_until').bind(ipHash,failures,lock).run();
-   return fail('密码错误',401);
+   return fail('管理员密码或谷歌动态验证码错误',401);
   }
   await env.DB.prepare('DELETE FROM login_attempts WHERE ip=?').bind(ipHash).run();
   return out({ok:true},200, {'set-cookie':cookie(await newSession(env))});
@@ -735,8 +766,8 @@ async function handler(req,env){
   return out({ok:true});
  }
 
- if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,testMode:MSWQ_TEST_OPEN_ADMIN});
- if(method==='POST'&&p==='/api/admin/logout')return out({ok:true,testMode:MSWQ_TEST_OPEN_ADMIN},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
+ if(method==='GET'&&p==='/api/admin/me')return out({ok:true,admin:true,twoFactor:true});
+ if(method==='POST'&&p==='/api/admin/logout')return out({ok:true},200,{'set-cookie':'mswq_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'});
  if(method==='POST'&&p==='/api/admin/types'){
   const body=await parse(req,10000),settings=await config(env),bad=checkTypeName(settings,'',body?.name);
   if(bad)return fail(bad,400);
