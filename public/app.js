@@ -1004,7 +1004,7 @@ function settingsHtml(){
 }
 function importHtml(){
  return row('导入旧版流程','从上传的原始编辑器导出「编辑备份 JSON」，再上传到这里',
- '<div class="notice">支持「群剧本」和「个人流程」两种 JSON。导入后默认是草稿，不会直接对外公开。包含的附件会尽可能导入到本站文件库。</div><div class="field" style="margin-top:15px"><label>选择 .json 备份文件</label><input type="file" id="importFile" accept=".json,application/json"></div><button class="btn primary" data-action="import-json">导入到草稿库</button><hr style="border:0;border-top:1px solid #444;margin:25px 0"><h3>平台数据备份</h3><p class="small muted">导出内容、设置和页面结构为 JSON。媒体文件需要另外保留，导出的 JSON 不含媒体二进制内容。</p><button class="btn" data-action="export-all">导出本站完整 JSON</button><p style="margin-top:20px" class="small muted">目前支持的直接导入格式为原版流程备份；本站 JSON 主要用于恢复依据，不提供一键整体恢复。</p>');
+ '<div class="notice">支持「群剧本」和「个人流程」两种 JSON。导入后默认是草稿，不会直接对外公开。包含的附件会尽可能导入到本站文件库。</div><div class="field" style="margin-top:15px"><label>选择 .json 备份文件</label><input type="file" id="importFile" accept=".json,application/json"></div><button class="btn primary" data-action="import-json">导入到草稿库</button><hr style="border:0;border-top:1px solid #444;margin:25px 0"><h3>全站迁移备份（ZIP）</h3><p class="small muted">一键下载 GitHub 完整源码、所有内容和原版 HTML、两套 D1 数据库全部数据与结构、R2 图片/图标/HTML 文件及元数据、全部 DOCX 模板及历史版本。每次点击都会读取当前保存的数据，新增或修改后重新下载即可。含私有资料，请勿公开分享；不包含账号密码、TOTP 密钥或令牌。</p><div class="flex" style="flex-wrap:wrap;gap:10px"><a class="btn green" href="/api/admin/backup/export" download>⬇ 下载完整迁移 ZIP</a><button class="btn" data-action="backup-inventory">检查完整备份范围</button></div><p class="small muted" style="margin-top:12px">ZIP 会比较大，请勿在打包过程中编辑或发布内容；使用新 Cloudflare 账号时需先创建目标资源并按压缩包内的 READ-FIRST.txt 恢复。</p><hr style="border:0;border-top:1px solid #444;margin:25px 0"><h3>旧版普通 JSON 导出</h3><p class="small muted">仅导出内容、设置和页面结构；不包含图片或其他文件二进制。</p><button class="btn" data-action="export-all">导出本站 JSON（仅内容）</button><p style="margin-top:20px" class="small muted">目前支持的直接导入格式为原版流程备份；本站 JSON 主要用于恢复依据，不提供一键整体恢复。</p>');
 }
 function upsertAdminItem(item){
  if(!item?.id)return;
@@ -1102,6 +1102,13 @@ async function assignContentSubgroup(id,category,targetSubgroup){
 }
 async function perform(action,id,el){
  switch(action){
+ case 'backup-inventory':{
+  const d=await api('/api/admin/backup/inventory');
+  const main=d.tables?.main||[],docx=d.tables?.docx||[];
+  const bytes=(Number(d.r2Bytes||0)/1048576).toFixed(1);
+  const details='<div class="small muted">主站 D1：'+main.map(x=>esc(x.table)+' ('+x.rows+' 行)').join('、')+'</div><div class="small muted" style="margin-top:10px">DOCX D1：'+docx.map(x=>esc(x.table)+' ('+x.rows+' 行)').join('、')+'</div>';
+  openModal('<h2>完整备份检查</h2><p>R2 文件：<b>'+d.r2Objects+'</b> 个，'+bytes+' MiB<br>DOCX KV：<b>'+d.docxKvKeys+'</b> 项<br>GitHub 源码仓库：<b>'+esc(d.sourceRepo)+'</b></p>'+details+'<p class="small muted">所有数据库表、完整文件与元数据将在下载时重新读取，不仅是目前展示的列表。</p><div class="flex end"><a class="btn green" href="/api/admin/backup/export" download>下载完整 ZIP</a><button class="btn" data-action="close-modal">关闭</button></div>');break;
+ }
  case 'admin-logout':{
   await api('/api/admin/logout',{method:'POST'});
   S.admin=false;location.assign('/admin');break;
