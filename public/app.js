@@ -17,12 +17,34 @@ function applyCustomTypes(settings){
  for(const id of Object.keys(builtinTypes))if(!(id in (settings?.type_labels||{})))typeNames[id]=builtinTypes[id];
  for(const t of settings?.custom_types||[])if(/^custom_[a-f0-9]{32}$/.test(t.id))typeNames[t.id]=t.name;
 }
+function subgroupsFor(category,settings=S.settings){
+ return (settings?.subgroups||[]).filter(g=>g.category===category);
+}
+function subgroupTitle(id,settings=S.settings){return (settings?.subgroups||[]).find(g=>g.id===id)?.name||'';}
+function subgroupPickerHtml(item){
+ const category=frontTabForItem(item),groups=subgroupsFor(category),current=item.content?.subgroupId||'';
+ return '<div class="field"><label>前台子分组</label><select data-field="subgroupId">'+
+  '<option value="" '+(!groups.some(g=>g.id===current)?'selected':'')+'>未分组 · 显示在其他内容区域</option>'+
+  groups.map(g=>'<option value="'+esc(g.id)+'" '+(g.id===current?'selected':'')+'>'+esc(g.name)+'</option>').join('')+
+  '</select><div class="muted small">在「分类管理」新增子分组后，就可以将卡片归入对应区域。</div></div>';
+}
+function coverPickerHtml(item){
+ const cover=item.thumbnail||'';
+ return '<div class="field"><label>卡片顶部封面图片 / 图标</label>'+
+  (cover?'<div class="cover-editor-preview"><img src="'+esc(cover)+'" alt="当前卡片封面" loading="lazy"></div>':'<div class="muted small">当前使用默认 MSWQ 卡片顶部背景。</div>')+
+  '<div class="flex cover-editor-actions" style="flex-wrap:wrap;margin:10px 0">'+
+  '<button class="btn sm green" data-action="pick-cover">从图标库选择</button>'+
+  '<label class="btn sm special-upload-label">直接上传图片<input id="coverUpload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif"></label>'+
+  (cover?'<button class="btn sm danger" data-action="clear-cover">清除封面</button>':'')+'</div>'+
+  '<input data-field="thumbnail" value="'+esc(cover)+'" placeholder="也可以粘贴图片链接，如 /api/asset/..." />'+
+  '<div class="muted small">首页卡片顶部显示这张图片，MSWQ 品牌标识保持不变。</div></div>';
+}
 function orderedCategoryIds(settings){
  const keys=Object.keys(typeNames).filter(id=>!(settings?.deleted_types||[]).includes(id));
  return [...new Set([...(settings?.type_order||[]),...keys])].filter(id=>keys.includes(id));
 }
 const blockNames={section:'流程分段',bilingual:'双语话术',text:'纯文本',hint:'绿色提示',wait:'等待步骤',button:'链接按钮',image:'图片',file:'附件'};
-const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',libraryCategory:'all',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null};
+const S={items:[],settings:null,admin:false,tab:'dashboard',edit:null,search:'',filter:'all',assets:[],viewer:null,picking:null,preview:false,returnTab:'library',libraryCategory:'all',bookmarkEntries:[],bookmarksLoaded:false,bookmarksPromise:null,bookmarksError:'',docxTemplates:[],docxTemplatesReady:false,docxTemplatesPromise:null,subgroupParent:''};
 let toastTimer;
 let draggedCategory='';
 let draggedContent='';
@@ -276,8 +298,8 @@ async function openAdmin(){
   S.admin=true;
   await loadAdmin();
   const initialTab=new URLSearchParams(location.search).get('tab');
-  if(['dashboard','library','categories','bookmarks','profile','html-files','assets','settings','import','legacy','legacy-docx'].includes(initialTab))S.tab=initialTab;
-  if(['assets','html-files'].includes(initialTab))await loadAssets();
+  if(['dashboard','library','categories','bookmarks','profile','html-files','icons','assets','settings','import','legacy','legacy-docx'].includes(initialTab))S.tab=initialTab;
+  if(['assets','html-files','icons'].includes(initialTab))await loadAssets();
   adminRender();
  }catch(err){
   S.admin=false;
@@ -289,12 +311,12 @@ async function loadAdmin(){
  S.items=data.items;S.settings=settings.settings;applyCustomTypes(S.settings);
 }
 function sideNav(){
- const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['categories','☷','分类管理'],['bookmarks','▣','网址收藏'],['profile','◈','个人名片'],['html-files','▣','HTML 文件管理'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
+ const links=[['dashboard','◫','总览'],['library','☰','内容管理'],['categories','☷','分类管理'],['bookmarks','▣','网址收藏'],['profile','◈','个人名片'],['html-files','▣','HTML 文件管理'],['icons','▧','图标管理'],['assets','▤','文件素材'],['settings','⚙','前台设置'],['import','⇧','导入与备份'],['legacy','▦','原版流程编辑器'],['legacy-docx','▣','DOCX 模板后台']];
  return '<aside class="admin-sidebar"><div class="admin-side-header"><div class="brand">MS<em>WQ</em></div><div class="muted tiny">统一内容管理系统</div></div><nav class="admin-side-menu">'+links.map(x=>'<button class="admin-nav '+(S.tab===x[0]||S.tab==='editor'&&S.returnTab===x[0]?'active':'')+'" data-action="tab" data-id="'+x[0]+'">'+x[1]+' '+x[2]+'</button>').join('')+'</nav><div class="admin-side-foot"><div>测试模式 · 免密码进入</div><div class="flex" style="margin-top:12px"><a href="/" target="_blank">打开前台 ↗</a></div></div></aside>';
 }
 function adminRender(){
- const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑','html-files':'HTML 文件管理',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
- const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'全部分类都能重命名、拖动排序、隐藏、删除和恢复，不影响原有内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布','html-files':'上传和管理 HTML 网页、图标及完整工具包；支持预览、源文件与 ZIP 下载',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
+ const heading={dashboard:'后台总览',library:'内容管理',categories:'分类管理',bookmarks:'网址收藏管理',profile:'个人名片管理',editor:'内容编辑','html-files':'HTML 文件管理',icons:'图标管理',assets:'素材与文件管理',settings:'公开首页设置',import:'导入 / 导出',legacy:'原版流程编辑器','legacy-docx':'DOCX 模板后台'}[S.tab]||'管理后台';
+ const summary={dashboard:'统一管理流程、剧本、页面与文档入口',library:'草稿不会被公开，点击发布后用户即可查看',categories:'全部分类都能重命名、拖动排序、隐藏、删除和恢复，不影响原有内容',bookmarks:'管理网址收藏列表并发布到前台',profile:'自由添加文字、链接、图片和视频',editor:'编辑完成后可以保存草稿或直接发布','html-files':'上传和管理 HTML 网页和完整工具包；支持预览、源文件与 ZIP 下载',icons:'专门管理所有卡片顶部封面图片，上传后编辑任意卡片均可选择',assets:'图片与文件保存在 MSWQ 独立文件存储',settings:'更改公开页面标题、描述、布局与公告',import:'兼容群剧本和个人流程原版 JSON 备份',legacy:'你上传的完整本地编辑器，可直接同步发布到 MSWQ','legacy-docx':'仅管理员可进入原 DOCX 模板管理功能'}[S.tab];
  const action=S.tab==='library'?'<button class="btn green" data-action="new-html-card">＋ 添加 HTML 卡片</button><button class="btn green" data-action="open-docx-create">＋ 添加 DOCX 入口</button><button class="btn primary" data-action="new-item">＋ 新建其他内容</button>':S.tab==='bookmarks'||S.tab==='profile'?'<button class="btn green" data-action="new-special" data-id="'+S.tab+'">＋ 新建'+(S.tab==='profile'?'个人名片':'网址收藏夹')+'</button>':S.tab==='editor'?'<button class="btn" data-action="tab" data-id="'+esc(S.returnTab||'library')+'">← 返回列表</button>':'<a href="/" target="_blank" class="btn sm">查看前台 ↗</a>';
  // Keep MSWQ's navigation permanently visible, with the entire right pane reserved for the tool.
  if(S.tab==='legacy'||S.tab==='legacy-docx'){
@@ -322,6 +344,7 @@ function adminPanel(){
  if(S.tab==='editor')return editorHtml();
  if(S.tab==='assets')return assetsHtml();
  if(S.tab==='html-files')return htmlFilesHtml();
+ if(S.tab==='icons')return iconsHtml();
  if(S.tab==='settings')return settingsHtml();
  if(S.tab==='categories')return categoryManagerHtml();
  if(S.tab==='import')return importHtml();
@@ -434,6 +457,7 @@ function htmlEditorHtml(item){
   '<div class="field"><label>前台分类</label><select data-field="category">'+htmlCategoryOptions(item.category||'page')+'</select></div>'+
   field('简介',item.description,'description','可选','textarea')+
   field('首页排序',item.sort_order,'sort_order','数字越小越靠前')+
+  subgroupPickerHtml(item)+coverPickerHtml(item)+
   '<div class="flex" style="flex-wrap:wrap;margin-top:16px"><button class="btn" data-action="save-item">保存修改</button>'+
   '<button class="btn green" data-action="publish-item">'+(item.status==='published'?'保存并继续发布':'保存并发布')+'</button>'+
   (item.id?'<button class="btn" data-action="copy-current">复制直达链接</button><button class="btn" data-action="preview-item">打开完整 HTML</button><button class="btn danger" data-action="delete-item">删除卡片</button>':'')+'</div>');
@@ -476,6 +500,7 @@ function documentEditorHtml(x){
   field('文档工作台地址',c.docUrl||'/docx','docUrl','/docx')+
   field('内容简介',x.description,'description','','textarea')+
   field('排序数字',x.sort_order,'sort_order','1000')+
+  subgroupPickerHtml(x)+coverPickerHtml(x)+
   '</div></details>'+
   '<div class="flex" style="flex-wrap:wrap;margin-top:18px"><button class="btn" data-action="save-item">保存修改</button>'+
   '<button class="btn green" data-action="publish-item">'+(x.status==='published'?'保存并继续发布':'保存并发布')+'</button>'+
@@ -545,7 +570,7 @@ function profileEditorHtml(x){
    field('公开路径（slug）',x.slug,'slug','profile-xxx')+
    field('页面简介（可选）',x.description,'description','','textarea')+
    field('首页排序数字',x.sort_order,'sort_order','1000')+
-   field('封面图片 URL（可选）',x.thumbnail,'thumbnail','/api/asset/...')+
+   coverPickerHtml(x)+subgroupPickerHtml(x)+
   '</div></details>');
  const aside='<aside class="editor-side"><strong>个人名片状态</strong><p class="small muted">'+(x.status==='published'?'已发布':'仅后台可见草稿')+'</p><p class="small muted">项目数：'+fields.length+'</p><p class="small muted">版本：'+x.version+'</p><p class="small muted wrap">/view/'+esc(x.slug||'保存后生成')+'</p></aside>';
  return '<div class="editor-grid"><div>'+items+meta+specialEditorActions(x)+'</div>'+aside+'</div>';
@@ -559,7 +584,7 @@ function editorHtml(){
  const c=x.content||(x.content={blocks:[],members:[]});
  const availableTypes=orderedCategoryIds(S.settings);if(!availableTypes.includes(x.kind))availableTypes.push(x.kind);
   const select='<select data-field="kind">'+availableTypes.map(t=>'<option '+(x.kind===t?'selected':'')+' value="'+esc(t)+'">'+esc(typeNames[t]||'原分类')+((S.settings?.deleted_types||[]).includes(t)?'（已删除，保留原内容）':'')+'</option>').join('')+'<option disabled>──────────</option><option value="__create_type__">＋ 新增分类…</option></select>';
- let main='<div class="admin-panel" style="margin-top:0"><div class="panel-head"><h2>基本信息</h2><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></div><div class="two">'+field('标题',x.title,'title','例如：个人沟通流程')+'<div class="field"><label>内容类型</label>'+select+'</div></div>'+field('公开路径（slug）',x.slug,'slug','不填写时自动生成')+field('简介',x.description,'description','一句话介绍此内容','textarea')+'<div class="three">'+field('分类',x.category,'category','例如：客服')+field('标签（逗号分隔）',(x.tags||[]).join(', '),'tags','标签1, 标签2')+field('首页排序数字',x.sort_order,'sort_order','数字越小越靠前')+'</div>'+field('封面图片（可填写素材资源 URL）',x.thumbnail,'thumbnail','/api/asset/...')+'</div>';
+ let main='<div class="admin-panel" style="margin-top:0"><div class="panel-head"><h2>基本信息</h2><span class="pill '+x.status+'">'+(x.status==='published'?'已发布':'草稿')+'</span></div><div class="two">'+field('标题',x.title,'title','例如：个人沟通流程')+'<div class="field"><label>内容类型</label>'+select+'</div></div>'+field('公开路径（slug）',x.slug,'slug','不填写时自动生成')+field('简介',x.description,'description','一句话介绍此内容','textarea')+'<div class="three">'+field('分类',x.category,'category','例如：客服')+field('标签（逗号分隔）',(x.tags||[]).join(', '),'tags','标签1, 标签2')+field('首页排序数字',x.sort_order,'sort_order','数字越小越靠前')+'</div>'+coverPickerHtml(x)+subgroupPickerHtml(x)+'</div>';
  if(x.kind==='bookmarks'){
   const entries=c.entries||(c.entries=[]);
   main+=row('网址收藏 · 可随时编辑和排序','新增网站、修改名称或网址、上传图标。发布后前台会显示为可点击的网站卡片',bookmarkEditorRows(entries)+'<div class="editor-add"><button class="btn green" data-action="add-bookmark">＋ 添加网址</button></div>');
@@ -623,11 +648,50 @@ function htmlFilesHtml(){
   '<div class="html-manager-list">'+(cards||'<div class="empty">还没有上传 HTML 文件，可在上方添加。</div>')+'</div>')+
  '</div>';
 }
+function iconsHtml(){
+ const imgs=S.assets.filter(a=>a.mime?.startsWith('image/'));
+ return row('上传图片图标','图片用作首页卡片顶部封面，已有图片也自动显示在这里。',
+  '<div class="field"><label>上传 PNG / JPG / WebP / GIF（单张不超过 12MB）</label>'+
+   '<input type="file" id="iconUpload" accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" multiple></div>'+
+  '<div class="flex" style="flex-wrap:wrap"><button class="btn green" data-action="upload-icons">上传到图标库</button>'+
+   '<span class="muted small">图片保存在原有 MSWQ 文件存储中，不影响 HTML 文件。</span></div>')+
+  row('全部已上传图片','共 '+imgs.length+' 张 · 在任意卡片编辑页点击「从图标库选择」即可直接使用',
+   imgs.length?'<div class="icon-library-grid">'+imgs.map(a=>'<div class="icon-library-card">'+
+    '<img src="'+asset(a.id)+'" loading="lazy" alt="'+esc(a.name)+'">'+
+    '<strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="muted tiny">'+Math.ceil(a.size/1024)+' KB</div>'+
+    '<div class="flex" style="flex-wrap:wrap;gap:6px">'+
+    '<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制图片链接</button>'+
+    '<a class="btn sm" href="'+asset(a.id)+'?download=1" download>下载</a>'+
+    '<button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button></div></div>').join('')+'</div>':
+   '<div class="empty">还没有上传图标图片，点击上方按钮添加。</div>');
+}
 function assetsHtml(){
  return row('素材库','此处管理一般图片、视频和附件；HTML 文件请进入左侧「HTML 文件管理」','<div class="field"><label>添加图片和文件（视频 50MB，其他 12MB）</label><input type="file" id="assetUpload" accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.pdf,.docx,.xlsx,.pptx,.txt,.zip" multiple></div><div class="flex"><button class="btn primary" data-action="upload-assets">上传文件</button><span class="muted small">文件保存在独立 R2 空间</span></div><hr style="border:0;border-top:1px solid #454648;margin:20px 0"><div class="asset-grid">'+S.assets.filter(a=>a.mime!=='text/html').map(a=>assetCard(a)).join('')+'</div>'+(S.assets.length?'':'<div class="empty">还没有上传素材</div>'));
 }
 function assetCard(a,picker=false){
  return '<div class="asset-card"><div class="asset-thumb">'+(a.mime?.startsWith('image/')?'<img loading="lazy" alt="" src="'+asset(a.id)+'">':a.mime?.startsWith('video/')?'<video muted playsinline preload="metadata" src="'+asset(a.id)+'"></video>':'<div style="font-size:32px">▤</div>')+'</div><strong title="'+esc(a.name)+'">'+esc(a.name)+'</strong><div class="tiny muted">'+Math.ceil(a.size/1024)+' KB</div><div class="flex" style="flex-wrap:wrap">'+(picker?'<button class="btn sm primary" data-action="select-asset" data-id="'+a.id+'">选择</button>':a.mime==='text/html'?'<button class="btn sm green" data-action="new-html-card" data-id="'+a.id+'">添加前台卡片</button><a class="btn sm" target="_blank" rel="noopener noreferrer" href="'+htmlUrl(a.id)+'">打开HTML</a><button class="btn sm" data-action="copy-html-asset" data-id="'+a.id+'">复制直达链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>':'<button class="btn sm" data-action="copy-asset" data-id="'+a.id+'">复制链接</button><button class="btn sm danger" data-action="delete-asset" data-id="'+a.id+'">删除</button>')+'</div></div>';
+}
+function subgroupManagerHtml(){
+ const types=orderedCategoryIds(S.settings).filter(id=>!(S.settings?.deleted_types||[]).includes(id));
+ if(!types.includes(S.subgroupParent))S.subgroupParent=types[0]||'';
+ const parent=S.subgroupParent,groups=subgroupsFor(parent);
+ const rows=groups.map((g,i)=>{
+  const count=S.items.filter(x=>frontTabForItem(x)===parent&&x.content?.subgroupId===g.id).length;
+  return '<div class="subgroup-manage-row"><div class="subgroup-position">'+(i+1)+'</div><div class="subgroup-name">'+
+   '<strong>'+esc(g.name)+'</strong><div class="muted tiny">'+count+' 个关联内容 · '+esc(typeNames[parent]||parent)+'</div></div>'+
+   '<div class="flex" style="flex-wrap:wrap;gap:6px">'+
+   '<button class="btn sm" data-action="move-subgroup" data-id="'+g.id+'" data-dir="-1" '+(!i?'disabled':'')+'>↑</button>'+
+   '<button class="btn sm" data-action="move-subgroup" data-id="'+g.id+'" data-dir="1" '+(i===groups.length-1?'disabled':'')+'>↓</button>'+
+   '<button class="btn sm" data-action="rename-subgroup" data-id="'+g.id+'">改名</button>'+
+   '<button class="btn sm danger" data-action="delete-subgroup" data-id="'+g.id+'">删除</button></div></div>';
+ }).join('');
+ return row('子分组管理','每个主分类都可新增子分组。例如「制作文件」下面按调查报告、地址查询等区域显示，每个区域独立排列卡片。',
+  '<div class="field"><label>选择主分类</label><select id="subgroupParent">'+
+  types.map(t=>'<option value="'+esc(t)+'" '+(t===parent?'selected':'')+'>'+esc(typeNames[t]||t)+'</option>').join('')+'</select></div>'+
+  '<div class="subgroup-add-row"><input id="subgroupNewName" maxlength="40" placeholder="新子分组名称，例如：资金调查报告">'+
+  '<button class="btn green" data-action="add-subgroup" '+(parent?'':'disabled')+'>＋ 新建子分组</button></div>'+
+  '<div class="subgroup-manage-list">'+(rows||'<div class="empty">暂时没有子分组。创建后到对应卡片编辑页选择其归属。</div>')+'</div>'+
+  '<div class="muted small" style="margin-top:12px">删除子分组不会删除已有卡片，原卡片会归入未分组区域。</div>');
 }
 function categoryManagerHtml(){
  const hidden=new Set(S.settings?.hidden_types||[]),active=orderedCategoryIds(S.settings);
@@ -653,7 +717,7 @@ function categoryManagerHtml(){
   '<div class="notice">删除分类只移除分类入口，不会删除名片、DOCX、流程等原有内容或已分享链接。已删除分类可在下方随时恢复；“全部内容”始终保留。</div>'+
   '<div class="category-manager-list">'+(rows||'<div class="empty">暂无启用分类，可从下方恢复或新增。</div>')+'</div>'+
   '<details class="category-restore-panel"><summary>已删除分类（'+deleted.length+'） · 点击展开恢复</summary>'+
-  '<div class="category-manager-list">'+(removed||'<div class="muted small">还没有删除的分类</div>')+'</div></details>');
+  '<div class="category-manager-list">'+(removed||'<div class="muted small">还没有删除的分类</div>')+'</div></details>')+subgroupManagerHtml();
 }
 function settingsHtml(){
  const s=S.settings||{};
@@ -727,7 +791,7 @@ case 'retry-bookmarks':{
  case 'tab':{
   S.tab=id;S.edit=null;
   if(location.pathname==='/admin')history.replaceState(null,'',id==='dashboard'?'/admin':'/admin?tab='+encodeURIComponent(id));
-  if(['assets','html-files'].includes(id))await loadAssets();
+  if(['assets','html-files','icons'].includes(id))await loadAssets();
   adminRender();break;
  }
  case 'go-html-upload':closeModal();S.tab='html-files';await loadAssets();history.replaceState(null,'','/admin?tab=html-files');adminRender();break;
