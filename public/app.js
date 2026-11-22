@@ -523,8 +523,7 @@ function documentEditorHtml(x){
   field('文档工作台地址',c.docUrl||'/docx','docUrl','/docx')+
   field('内容简介',x.description,'description','','textarea')+
   field('排序数字',x.sort_order,'sort_order','1000')+
-  subgroupPickerHtml(x)+coverPickerHtml(x)+
-  '</div></details>'+
+  '</div></details>'+subgroupPickerHtml(x)+coverPickerHtml(x)+
   '<div class="flex" style="flex-wrap:wrap;margin-top:18px"><button class="btn" data-action="save-item">保存修改</button>'+
   '<button class="btn green" data-action="publish-item">'+(x.status==='published'?'保存并继续发布':'保存并发布')+'</button>'+
   (x.id?'<button class="btn" data-action="copy-current">复制前台链接</button><button class="btn danger" data-action="delete-item">删除入口</button>':'')+
@@ -593,8 +592,7 @@ function profileEditorHtml(x){
    field('公开路径（slug）',x.slug,'slug','profile-xxx')+
    field('页面简介（可选）',x.description,'description','','textarea')+
    field('首页排序数字',x.sort_order,'sort_order','1000')+
-   coverPickerHtml(x)+subgroupPickerHtml(x)+
-  '</div></details>');
+  '</div></details>')+row('首页卡片图标与子分组','在这里直接选择展示图片，以及首页中所属的子分区。',subgroupPickerHtml(x)+coverPickerHtml(x));
  const aside='<aside class="editor-side"><strong>个人名片状态</strong><p class="small muted">'+(x.status==='published'?'已发布':'仅后台可见草稿')+'</p><p class="small muted">项目数：'+fields.length+'</p><p class="small muted">版本：'+x.version+'</p><p class="small muted wrap">/view/'+esc(x.slug||'保存后生成')+'</p></aside>';
  return '<div class="editor-grid"><div>'+items+meta+specialEditorActions(x)+'</div>'+aside+'</div>';
 }
