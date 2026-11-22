@@ -39,7 +39,7 @@ compiled+='\n'+backup+'\n';
 // Exclude local credentials, build outputs, dependency caches and backups.
 const frontend=new Set(Object.values(manifest));
 const skipDirectories=new Set(['.git','.wrangler','node_modules','dist','__pycache__']);
-const allowedExtensions=new Set(['.md','.js','.mjs','.html','.css','.sql','.json','.jsonc','.toml','.py','.txt','.gitignore']);
+const allowedExtensions=new Set(['.md','.js','.mjs','.html','.css','.sql','.json','.jsonc','.toml','.yaml','.yml','.py','.txt','.gitignore']);
 const extras={};
 async function scan(relative=''){
  const current=path.join(root,relative);
@@ -59,6 +59,7 @@ async function scan(relative=''){
 }
 await scan();
 if(Object.keys(extras).length<8)throw Error('Source file snapshot appears incomplete');
+await mkdir(path.join(root,'dist'),{recursive:true});
 await writeFile(path.join(root,'dist/mswq-source-snapshot.json'),JSON.stringify(extras));
 if(compiled.includes('const ASSETS = __MSWQ_ASSETS__')||compiled.includes('const DOCX_ADMIN_BACKEND = __MSWQ_DOCX_API__'))throw Error('Unreplaced placeholders');
 await mkdir(path.join(root,'dist'),{recursive:true});
