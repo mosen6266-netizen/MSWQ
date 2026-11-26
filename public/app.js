@@ -74,7 +74,7 @@ function restoreHomeDOM(){
  ++publicNavSeq;
  const snapshot=homeSnapshot;homeSnapshot=null;
  root.replaceChildren(snapshot.fragment);
- document.title='MSWQ · 内容与工具中心';
+ document.title='MSWQ';
  S.viewer=null;S.preview=false;
  requestAnimationFrame(()=>window.scrollTo(0,snapshot.scrollY));
  return true;
@@ -131,7 +131,7 @@ async function applyHomeCatalog(data,seq,fromCache=false){
 async function showHome(reuseLoaded=false){
  const seq=++publicNavSeq;
  if(reuseLoaded&&restoreHomeDOM())return;
- document.title='MSWQ · 内容与工具中心';S.preview=false;
+ document.title='MSWQ';S.preview=false;
  const cached=readPublicCatalog();
  if(cached){
   await applyHomeCatalog(cached,seq,true);
